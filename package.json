@@ -1,0 +1,39 @@
+{
+  "name": "watertight",
+  "version": "0.1.0",
+  "description": "Reports that hold water — every number carries its receipt, and ungrounded claims fail the build.",
+  "type": "module",
+  "bin": {
+    "watertight": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "report",
+    "provenance",
+    "llm",
+    "hallucination",
+    "grounding",
+    "verification",
+    "markdown",
+    "metrics"
+  ],
+  "author": "Hosung Kang (https://github.com/camosss)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}
