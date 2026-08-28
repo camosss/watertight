@@ -1,0 +1,43 @@
+{
+  "identifiers": { "app_version": "3.2.0", "flag": "checkout_v2" },
+  "metrics": {
+    "cvr_before": {
+      "value": 0.031, "unit": "ratio", "definition": "purchases / sessions, control cohort",
+      "source": { "type": "sql", "db": "warehouse.duckdb", "query": "SELECT ... control" },
+      "window": "2026-09-01 ~ 2026-09-14", "fetched_at": "2026-09-15T10:00:00+09:00"
+    },
+    "cvr_after": {
+      "value": 0.036, "unit": "ratio", "definition": "purchases / sessions, treatment cohort",
+      "source": { "type": "sql", "db": "warehouse.duckdb", "query": "SELECT ... treatment" },
+      "window": "2026-09-01 ~ 2026-09-14", "fetched_at": "2026-09-15T10:00:00+09:00"
+    },
+    "cvr_lift": {
+      "value": 0.161, "unit": "ratio-point", "definition": "relative lift, treatment vs control",
+      "derived": { "op": "pct_change", "before": 0.031, "after": 0.036 }
+    },
+    "revenue_delta": {
+      "value": 1428, "unit": "USD",
+      "derived": { "op": "sum", "of": ["revenue_delta_web", "revenue_delta_app"] }
+    },
+    "revenue_delta_web": {
+      "value": 45, "unit": "USD",
+      "source": { "type": "csv", "file": "revenue.csv", "cell": "B4" },
+      "window": "2026-09-01 ~ 2026-09-14", "fetched_at": "2026-09-15"
+    },
+    "revenue_delta_app": {
+      "value": 1383, "unit": "USD",
+      "source": { "type": "csv", "file": "revenue.csv", "cell": "B5" },
+      "window": "2026-09-01 ~ 2026-09-14", "fetched_at": "2026-09-15"
+    },
+    "revenue_target": {
+      "value": [1000, 5000], "unit": "USD", "definition": "hypothesised monthly delta",
+      "source": { "type": "hypothesis", "doc": "EXP-42 brief" },
+      "window": "-", "fetched_at": "-"
+    },
+    "fill_rate": {
+      "value": 1.07, "unit": "ratio", "definition": "vendor counts responses, not requests — may exceed 100%",
+      "source": { "type": "vendor-dashboard", "vendor": "adnet" },
+      "window": "2026-09-01 ~ 2026-09-14", "fetched_at": "2026-09-15"
+    }
+  }
+}
