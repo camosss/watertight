@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { compile } from './compile.js'
+import { compile, type Format } from './compile.js'
 import { refresh } from './refresh.js'
 
 const USAGE = `watertight — reports that hold water. Every number carries its receipt;
@@ -13,7 +13,9 @@ Usage
   watertight refresh <dir>     re-fetch metric values from their sources, update metrics.json
 
 Options
-  --out <file>       where to write the HTML (default: report.html next to the report)
+  --format <html|md> output format (default: html). md is grounded markdown with a
+                     receipts appendix — pastes into Notion, PR bodies or Slack intact
+  --out <file>       where to write the output (default: report.html / report.grounded.md)
   --check            verify only, write nothing
   --dry-run          refresh only: show what would change, write nothing
   --allow-commands   refresh only: let "command" sources run shell (off by default —
@@ -33,6 +35,7 @@ function parseArgs(argv: string[]) {
   let json = false
   let dryRun = false
   let allowCommands = false
+  let format: Format = 'html'
   let help = false
   let version = false
 
@@ -42,6 +45,7 @@ function parseArgs(argv: string[]) {
     else if (arg === '--check') check = true
     else if (arg === '--dry-run') dryRun = true
     else if (arg === '--allow-commands') allowCommands = true
+    else if (arg === '--format') format = args[++i] === 'md' ? 'md' : 'html'
     else if (arg === '--json') json = true
     else if (arg === '-h' || arg === '--help') help = true
     else if (arg === '-v' || arg === '--version') version = true
@@ -49,7 +53,7 @@ function parseArgs(argv: string[]) {
   }
   const command = positional[0] === 'refresh' ? 'refresh' : 'compile'
   if (command === 'refresh') positional.shift()
-  return { command, positional, out, check, json, help, version, dryRun, allowCommands }
+  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format }
 }
 
 async function exists(path: string) {
@@ -101,11 +105,12 @@ async function main() {
     process.exit(r.errors.length > 0 ? 1 : 0)
   }
 
-  const result = await compile(reportPath, irPath)
-  const outPath = resolve(opts.out ?? join(reportPath, '..', 'report.html'))
+  const result = await compile(reportPath, irPath, opts.format)
+  const defaultName = opts.format === 'md' ? 'report.grounded.md' : 'report.html'
+  const outPath = resolve(opts.out ?? join(reportPath, '..', defaultName))
 
   if (opts.json) {
-    console.log(JSON.stringify({ version: pkg.version, ...result, html: undefined, wrote: result.html && !opts.check ? outPath : undefined }, null, 2))
+    console.log(JSON.stringify({ version: pkg.version, ...result, output: undefined, wrote: result.output && !opts.check ? outPath : undefined }, null, 2))
   } else {
     console.log(`\nwatertight v${pkg.version} · ${result.grounded.metrics} grounded metrics · ${result.grounded.claims} claims · ${result.grounded.identifiers} identifiers`)
     if (result.leaks.length > 0) {
@@ -118,10 +123,10 @@ async function main() {
     }
   }
 
-  if (result.html && !opts.check) {
-    await writeFile(outPath, result.html)
+  if (result.output && !opts.check) {
+    await writeFile(outPath, result.output)
     if (!opts.json) console.log(`holds water → ${outPath}\n`)
-  } else if (result.html && opts.check && !opts.json) {
+  } else if (result.output && opts.check && !opts.json) {
     console.log('holds water (check only — nothing written)\n')
   }
 

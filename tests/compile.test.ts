@@ -9,14 +9,14 @@ import { compile } from '../src/compile.js'
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'sample-experiment')
 
 /** Write a throwaway report+IR pair and compile it. */
-async function compileCase(report: string, ir: object) {
+async function compileCase(report: string, ir: object, format: 'html' | 'md' = 'html') {
   const dir = await mkdtemp(join(tmpdir(), 'wt-'))
   const reportPath = join(dir, 'report.md')
   const irPath = join(dir, 'metrics.json')
   await writeFile(reportPath, report)
   await writeFile(irPath, JSON.stringify(ir))
   try {
-    return await compile(reportPath, irPath)
+    return await compile(reportPath, irPath, format)
   } finally {
     await rm(dir, { recursive: true })
   }
@@ -33,15 +33,15 @@ test('the fixture holds water and renders receipts', async () => {
   assert.equal(result.leaks.length, 0)
   assert.equal(result.grounded.metrics, 6)
   // a receipt travels with the number: source, window, fetch time in the title attribute
-  assert.ok(result.html?.includes('title="sql'))
-  assert.ok(result.html?.includes('fetched 2026-09-15'))
+  assert.ok(result.output?.includes('title="sql'))
+  assert.ok(result.output?.includes('fetched 2026-09-15'))
   // ranges and identifiers render
-  assert.ok(result.html?.includes('1,000~5,000'))
-  assert.ok(result.html?.includes('<code>3.2.0</code>'))
+  assert.ok(result.output?.includes('1,000~5,000'))
+  assert.ok(result.output?.includes('<code>3.2.0</code>'))
 })
 
 test('a number outside a reference is a leak', async () => {
-  const { leaks, html } = await compileCase('CTR was 0.8% overall.', { metrics: { x: MEASURED } })
+  const { leaks, output: html } = await compileCase('CTR was 0.8% overall.', { metrics: { x: MEASURED } })
 
   assert.ok(leaks.some((l) => l.rule === 'naked-number' && l.message.includes('0.8%')))
   assert.equal(html, undefined)
@@ -115,7 +115,7 @@ test('narrative html is escaped — injection cannot ride a report', async () =>
 })
 
 test('a claim renders with the receipts of its evidence', async () => {
-  const { leaks, html, grounded } = await compileCase(
+  const { leaks, output: html, grounded } = await compileCase(
     'Numbers: {{m:x}}. {{claim: it worked | evidence: x}}',
     { metrics: { x: MEASURED } },
   )
@@ -141,4 +141,28 @@ test('a claim citing an unknown metric is a leak', async () => {
 test('a number smuggled into claim text is still a leak', async () => {
   const { leaks } = await compileCase('{{claim: lifted 12% | evidence: x}}', { metrics: { x: MEASURED } })
   assert.ok(leaks.some((l) => l.rule === 'naked-number' && l.message.includes('12%')))
+})
+
+test('md format renders superscripts and a receipts appendix', async () => {
+  const result = await compile(join(FIXTURE, 'report.md'), join(FIXTURE, 'metrics.json'), 'md')
+  assert.equal(result.leaks.length, 0)
+  // first metric use gets superscript 1, and the appendix lists it with its receipt
+  assert.match(result.output ?? '', /\*\*.+\*\* ⁽1⁾/)
+  assert.match(result.output ?? '', /### Receipts \(6 metrics\)/)
+  // identifiers stay as code spans, claims keep their evidence inline
+  assert.ok(result.output?.includes('`3.2.0`'))
+  assert.match(result.output ?? '', /\*\(evidence: /)
+  // no HTML leaked into the markdown output
+  assert.ok(!result.output?.includes('<span'))
+})
+
+test('md format repeats the same superscript for a reused metric', async () => {
+  const { output } = await compileCase(
+    'A {{m:x}} and again {{m:x}} then {{m:y}}.',
+    { metrics: { x: MEASURED, y: { ...MEASURED, value: 7 } } },
+    'md',
+  )
+  const supers = [...(output ?? '').matchAll(/⁽(\d)⁾/g)].map((m) => m[1])
+  // body only — the appendix numbers with an ordered list, not superscripts
+  assert.deepEqual(supers, ['1', '1', '2'])
 })

@@ -1,17 +1,20 @@
 import { readFile } from 'node:fs/promises'
 import { parseIr } from './ir.js'
 import { render } from './render.js'
+import { renderMarkdown } from './renderMd.js'
 import { scanNakedNumbers, scanRefs } from './scan.js'
 import type { Leak } from './types.js'
+
+export type Format = 'html' | 'md'
 
 export interface CompileResult {
   leaks: Leak[]
   /** Present only when the report holds water */
-  html?: string
+  output?: string
   grounded: { metrics: number; identifiers: number; claims: number }
 }
 
-export async function compile(reportPath: string, irPath: string): Promise<CompileResult> {
+export async function compile(reportPath: string, irPath: string, format: Format = 'html'): Promise<CompileResult> {
   const report = await readFile(reportPath, 'utf8')
   const { ir, leaks } = parseIr(JSON.parse(await readFile(irPath, 'utf8')))
 
@@ -25,5 +28,5 @@ export async function compile(reportPath: string, irPath: string): Promise<Compi
   if (ir) leaks.push(...scanRefs(report, new Set(Object.keys(ir.metrics)), new Set(Object.keys(ir.identifiers))))
 
   if (leaks.length > 0 || !ir) return { leaks, grounded }
-  return { leaks, html: render(report, ir), grounded }
+  return { leaks, output: format === 'md' ? renderMarkdown(report, ir) : render(report, ir), grounded }
 }

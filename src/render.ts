@@ -4,7 +4,7 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-function formatValue(m: Metric): string {
+export function formatValue(m: Metric): string {
   if (Array.isArray(m.value)) {
     const [lo, hi] = m.value
     return `${lo.toLocaleString()}~${hi.toLocaleString()}${m.unit === 'ratio' ? '%' : ` ${m.unit}`}`
@@ -14,7 +14,7 @@ function formatValue(m: Metric): string {
   return `${m.value.toLocaleString()} ${m.unit}`.trim()
 }
 
-function receipt(m: Metric): string {
+export function receipt(m: Metric): string {
   const source = m.derived
     ? m.derived.op === 'sum'
       ? `= ${m.derived.of.join(' + ')} (recomputed)`
