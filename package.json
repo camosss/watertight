@@ -1,13 +1,14 @@
 {
   "name": "watertight",
   "version": "0.1.0",
-  "description": "Reports that hold water — every number carries its receipt, and ungrounded claims fail the build.",
+  "description": "Reports that hold water \u2014 every number carries its receipt, and ungrounded claims fail the build.",
   "type": "module",
   "bin": {
     "watertight": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "SKILL.md"
   ],
   "scripts": {
     "dev": "tsx src/cli.ts",
@@ -19,12 +20,12 @@
   "keywords": [
     "report",
     "provenance",
-    "llm",
-    "hallucination",
     "grounding",
+    "metrics",
     "verification",
-    "markdown",
-    "metrics"
+    "hallucination",
+    "documentation",
+    "ci"
   ],
   "author": "Hosung Kang (https://github.com/camosss)",
   "license": "MIT",
@@ -35,5 +36,13 @@
     "@types/node": "^26.4.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camosss/watertight.git"
+  },
+  "homepage": "https://github.com/camosss/watertight#readme",
+  "bugs": {
+    "url": "https://github.com/camosss/watertight/issues"
   }
 }
