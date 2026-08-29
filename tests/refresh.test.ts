@@ -101,3 +101,59 @@ test('a fetch error names the metric and the cell', async () => {
     await rm(dir, { recursive: true })
   }
 })
+
+test('a custom fetcher covers its source type, and derived changes follow', async () => {
+  const { irPath } = await setup({
+    conv_before: { ...MEASURED, value: 0.031, source: { type: 'mixpanel', bookmark: 'abc' } },
+    conv_after: { ...MEASURED, value: 0.036, source: { type: 'mixpanel', bookmark: 'def' } },
+    lift: { value: 0.161, unit: 'ratio-point', definition: 'd', derived: { op: 'pct_change', before: 'conv_before', after: 'conv_after' } },
+  })
+  const result = await refresh(irPath, {
+    allowCommands: false,
+    dryRun: false,
+    fetchers: { mixpanel: (source) => (source['bookmark'] === 'def' ? 0.04 : 0.031) },
+  })
+  assert.equal(result.skipped.length, 0)
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.conv_after.value, 0.04)
+  assert.notEqual(written.metrics.conv_after.fetched_at, 'old')
+  // pct_change follows the moved input, at the author's stated precision
+  assert.equal(written.metrics.lift.value, 0.29)
+})
+
+test('a fetcher that throws names the metric; a built-in type is never shadowed', async () => {
+  const { irPath } = await setup(
+    {
+      broken: { ...MEASURED, value: 1, source: { type: 'vendor' } },
+      safe: { ...MEASURED, value: 40, source: { type: 'csv', file: 'a.csv', cell: 'A1' } },
+    },
+    { 'a.csv': '77\n' },
+  )
+  const result = await refresh(irPath, {
+    allowCommands: false,
+    dryRun: false,
+    fetchers: {
+      vendor: () => { throw new Error('token expired') },
+      csv: () => 999, // must not be consulted — built-ins win
+    },
+  })
+  assert.deepEqual(result.errors.map((e) => e.key), ['broken'])
+  assert.match(result.errors[0].message, /token expired/)
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.safe.value, 77)
+})
+
+test('a fetcher returning garbage is an error, not a silent write', async () => {
+  const { irPath } = await setup({
+    x: { ...MEASURED, value: 5, source: { type: 'vendor' } },
+  })
+  const result = await refresh(irPath, {
+    allowCommands: false,
+    dryRun: false,
+    fetchers: { vendor: () => Number('not-a-number') },
+  })
+  assert.equal(result.errors.length, 1)
+  assert.match(result.errors[0].message, /not a number/)
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.x.value, 5)
+})

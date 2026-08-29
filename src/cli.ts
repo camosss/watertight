@@ -2,7 +2,8 @@
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { compile, type Format } from './compile.js'
-import { refresh } from './refresh.js'
+import { refresh, type Fetcher } from './refresh.js'
+import { pathToFileURL } from 'node:url'
 
 const USAGE = `watertight — reports that hold water. Every number carries its receipt;
 an ungrounded claim is a leak, and a report with leaks does not build.
@@ -18,6 +19,9 @@ Options
   --out <file>       where to write the output (default: report.html / report.grounded.md)
   --check            verify only, write nothing
   --dry-run          refresh only: show what would change, write nothing
+  --fetchers <file>  refresh only: a JS module of custom source adapters, e.g.
+                     export function mixpanel(source) { ... return value }
+                     Loading a module runs its code — only pass files you wrote or trust.
   --allow-commands   refresh only: let "command" sources run shell (off by default —
                      an IR from someone else's repo must not execute code on your machine)
   --json          machine-readable result on stdout
@@ -35,6 +39,7 @@ function parseArgs(argv: string[]) {
   let json = false
   let dryRun = false
   let allowCommands = false
+  let fetchersPath: string | undefined
   let format: Format = 'html'
   let help = false
   let version = false
@@ -45,6 +50,7 @@ function parseArgs(argv: string[]) {
     else if (arg === '--check') check = true
     else if (arg === '--dry-run') dryRun = true
     else if (arg === '--allow-commands') allowCommands = true
+    else if (arg === '--fetchers') fetchersPath = args[++i]
     else if (arg === '--format') format = args[++i] === 'md' ? 'md' : 'html'
     else if (arg === '--json') json = true
     else if (arg === '-h' || arg === '--help') help = true
@@ -53,7 +59,7 @@ function parseArgs(argv: string[]) {
   }
   const command = positional[0] === 'refresh' ? 'refresh' : 'compile'
   if (command === 'refresh') positional.shift()
-  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format }
+  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath }
 }
 
 async function exists(path: string) {
@@ -84,7 +90,8 @@ async function main() {
     reportPath = join(dir, 'report.md')
     irPath = join(dir, 'metrics.json')
   }
-  for (const path of [reportPath, irPath]) {
+  // refresh works on the IR alone — an IR-only directory is a legitimate workspace
+  for (const path of opts.command === 'refresh' ? [irPath] : [reportPath, irPath]) {
     if (!(await exists(path))) {
       console.error(`Not found: ${path}`)
       console.error('Expected report.md and metrics.json — see --help.')
@@ -93,7 +100,23 @@ async function main() {
   }
 
   if (opts.command === 'refresh') {
-    const r = await refresh(irPath, { allowCommands: opts.allowCommands, dryRun: opts.dryRun })
+    let fetchers: Record<string, Fetcher> | undefined
+    if (opts.fetchersPath) {
+      const mod = await import(pathToFileURL(resolve(opts.fetchersPath)).href)
+      const exports = (typeof mod.default === 'object' && mod.default !== null ? mod.default : mod) as Record<string, unknown>
+      fetchers = Object.fromEntries(
+        Object.entries(exports).filter(([, v]) => typeof v === 'function'),
+      ) as Record<string, Fetcher>
+      if (Object.keys(fetchers).length === 0) {
+        console.error(`error: ${opts.fetchersPath} exports no functions — nothing to fetch with`)
+        process.exit(2)
+      }
+    }
+    const r = await refresh(irPath, { allowCommands: opts.allowCommands, dryRun: opts.dryRun, fetchers })
+    if (opts.json) {
+      console.log(JSON.stringify(r, null, 2))
+      process.exit(r.errors.length > 0 ? 1 : 0)
+    }
     for (const c of r.changes) console.log(`  ${c.key}: ${c.before.toLocaleString()} → ${c.after.toLocaleString()}`)
     for (const s of r.skipped) console.log(`  ~ ${s.key} skipped — ${s.reason}`)
     for (const e of r.errors) console.error(`  ✗ ${e.key}: ${e.message}`)

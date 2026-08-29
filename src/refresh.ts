@@ -3,10 +3,22 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type { Metric, Source } from './types.js'
 
+/**
+ * A custom source adapter: given the receipt, return the current value.
+ * Registered per source type via --fetchers; the module is chosen by the person
+ * running refresh, never by the IR, so secrets and vendor APIs stay out of core.
+ */
+export type Fetcher = (
+  source: Source,
+  ctx: { key: string; metric: Metric; baseDir: string },
+) => number | Promise<number>
+
 export interface RefreshOptions {
   /** command sources execute arbitrary shell from the IR — off unless explicitly allowed */
   allowCommands: boolean
   dryRun: boolean
+  /** custom adapters by source type — built-in csv/json/command always win */
+  fetchers?: Record<string, Fetcher>
 }
 
 export interface RefreshChange {
@@ -103,8 +115,13 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
           continue
         }
         value = fetchCommand(m.source, baseDir)
+      } else if (options.fetchers?.[m.source.type]) {
+        value = toNumber(
+          await options.fetchers[m.source.type](m.source, { key, metric: m, baseDir }),
+          `fetcher "${m.source.type}" for "${key}"`,
+        )
       } else {
-        result.skipped.push({ key, reason: `no built-in adapter for source type "${m.source.type}"` })
+        result.skipped.push({ key, reason: `no adapter for source type "${m.source.type}"` })
         continue
       }
       if (value !== m.value) result.changes.push({ key, before: m.value, after: value })
@@ -115,13 +132,23 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
     }
   }
 
-  // parts may have moved, so stored sums are recomputed rather than left to go stale
+  // inputs may have moved, so derived values are recomputed rather than left to go stale
   for (const [key, m] of Object.entries(raw.metrics)) {
-    if (m.derived?.op !== 'sum' || Array.isArray(m.value)) continue
-    const computed = m.derived.of.reduce((acc, ref) => {
-      const part = raw.metrics[ref]
-      return acc + (part && typeof part.value === 'number' ? part.value : NaN)
-    }, 0)
+    if (!m.derived || Array.isArray(m.value)) continue
+    let computed: number
+    if (m.derived.op === 'sum') {
+      computed = m.derived.of.reduce((acc, ref) => {
+        const part = raw.metrics[ref]
+        return acc + (part && typeof part.value === 'number' ? part.value : NaN)
+      }, 0)
+    } else {
+      const before = raw.metrics[m.derived.before]?.value
+      const after = raw.metrics[m.derived.after]?.value
+      if (typeof before !== 'number' || typeof after !== 'number' || before === 0) continue
+      // keep the author's stated precision — refresh must not turn 0.155 into 0.1551724
+      const decimals = (String(m.value).split('.')[1] ?? '').length
+      computed = Number(((after - before) / before).toFixed(decimals))
+    }
     if (Number.isFinite(computed) && computed !== m.value) {
       result.changes.push({ key, before: m.value as number, after: computed })
       m.value = computed
