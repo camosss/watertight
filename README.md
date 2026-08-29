@@ -164,12 +164,13 @@ figure shows its receipt.
 
 | check | catches |
 |---|---|
-| `naked-number` | any digit in prose not covered by a reference (dates, headings, code spans and `{{raw:}}` are exempt) |
+| `naked-number` | any digit in prose not covered by a reference — heading text included; dates, URLs, code spans and `{{raw:}}` are exempt |
 | `unknown-ref` | `{{m:...}}` / `{{id:...}}` pointing at nothing |
 | `missing-field` | a measured metric without `source`, `window`, or `fetched_at` |
 | `definition-required` | a `ratio` / `ratio-point` metric with no stated basis — this is how a fill rate of 107% stays honest |
 | `derived-mismatch` | a `sum` that doesn't add up; a `pct_change` that doesn't recompute — to the stored value's own precision, so `0.161` passes as 16.1% but `0.15` for 15.5% fails |
 | `claim-without-evidence` | a `{{claim:}}` with no `evidence:` keys, or keys that don't exist |
+| `malformed-marker` | anything still marker-shaped after every recognised form — a typo'd `{{claim:…\|evidnce:…}}` must fail, not render verbatim |
 | `bad-derived` | derived ops referencing missing or non-numeric inputs |
 | `empty-ir` | a report "grounded" in nothing |
 | `stale-metric` | with `--max-age <days>`: a receipt whose `fetched_at` is older than the budget — numbers age |
