@@ -14,20 +14,24 @@ Usage
   watertight <dir>             compile <dir>/report.md + <dir>/metrics.json → <dir>/report.html
   watertight <report> <ir>     explicit file paths
   watertight refresh <dir>     re-fetch metric values from their sources, update metrics.json
+  watertight verify <dir>      re-fetch and COMPARE — a stored value its source no longer
+                               returns is a receipt-mismatch; nothing is written
   watertight init [dir]        scaffold a report.md + metrics.json pair that already holds water
 
 Options
   --max-age <days>   compile only: fail any metric whose fetched_at is older —
                      numbers age, and a stale receipt is quietly becoming a leak
+  --max-raw <n>      compile only: fail when the report uses more than n {{raw:}}
+                     escapes — the escape hatch must stay boundable
   --format <html|md> output format (default: html). md is grounded markdown with a
                      receipts appendix — pastes into Notion, PR bodies or Slack intact
   --out <file>       where to write the output (default: report.html / report.grounded.md)
   --check            verify only, write nothing
   --dry-run          refresh only: show what would change, write nothing
-  --fetchers <file>  refresh only: a JS module of custom source adapters, e.g.
+  --fetchers <file>  refresh/verify: a JS module of custom source adapters, e.g.
                      export function mixpanel(source) { ... return value }
                      Loading a module runs its code — only pass files you wrote or trust.
-  --allow-commands   refresh only: let "command" sources run shell (off by default —
+  --allow-commands   refresh/verify: let "command" sources run shell (off by default —
                      an IR from someone else's repo must not execute code on your machine)
   --json          machine-readable result on stdout
   -v, --version   print the version
@@ -47,6 +51,7 @@ function parseArgs(argv: string[]) {
   let fetchersPath: string | undefined
   let format: Format = 'html'
   let maxAgeDays: number | undefined
+  let maxRaw: number | undefined
   let help = false
   let version = false
 
@@ -65,6 +70,13 @@ function parseArgs(argv: string[]) {
         process.exit(2)
       }
     }
+    else if (arg === '--max-raw') {
+      maxRaw = Number(args[++i])
+      if (!Number.isFinite(maxRaw) || maxRaw < 0) {
+        console.error(`error: --max-raw needs a number, got "${args[i]}"`)
+        process.exit(2)
+      }
+    }
     else if (arg === '--json') json = true
     else if (arg === '-h' || arg === '--help') help = true
     else if (arg === '-v' || arg === '--version') version = true
@@ -74,9 +86,9 @@ function parseArgs(argv: string[]) {
       process.exit(2)
     } else positional.push(arg)
   }
-  const command = positional[0] === 'refresh' ? 'refresh' : positional[0] === 'init' ? 'init' : 'compile'
+  const command = ['refresh', 'init', 'verify'].includes(positional[0]) ? positional[0] : 'compile'
   if (command !== 'compile') positional.shift()
-  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays }
+  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays, maxRaw }
 }
 
 async function exists(path: string) {
@@ -120,8 +132,8 @@ async function main() {
     reportPath = join(dir, 'report.md')
     irPath = join(dir, 'metrics.json')
   }
-  // refresh works on the IR alone — an IR-only directory is a legitimate workspace
-  for (const path of opts.command === 'refresh' ? [irPath] : [reportPath, irPath]) {
+  // refresh/verify work on the IR alone — an IR-only directory is a legitimate workspace
+  for (const path of opts.command === 'refresh' || opts.command === 'verify' ? [irPath] : [reportPath, irPath]) {
     if (!(await exists(path))) {
       console.error(`Not found: ${path}`)
       console.error('Expected report.md and metrics.json — see --help.')
@@ -129,7 +141,7 @@ async function main() {
     }
   }
 
-  if (opts.command === 'refresh') {
+  if (opts.command === 'refresh' || opts.command === 'verify') {
     let fetchers: Record<string, Fetcher> | undefined
     if (opts.fetchersPath) {
       const mod = await import(pathToFileURL(resolve(opts.fetchersPath)).href)
@@ -142,12 +154,55 @@ async function main() {
         process.exit(2)
       }
     }
-    const r = await refresh(irPath, { allowCommands: opts.allowCommands, dryRun: opts.dryRun, fetchers })
+    const ir = JSON.parse(await readFile(irPath, 'utf8')) as {
+      metrics?: Record<string, { derived?: unknown }>
+    }
+    const r = await refresh(irPath, {
+      allowCommands: opts.allowCommands,
+      dryRun: opts.dryRun || opts.command === 'verify',
+      fetchers,
+    })
+
+    if (opts.command === 'verify') {
+      // a change on a MEASURED metric means the IR no longer matches its source —
+      // the receipt is real but the value is not. Derived changes just cascade.
+      const mismatches = r.changes.filter((c) => !ir.metrics?.[c.key]?.derived)
+      if (opts.json) {
+        console.log(JSON.stringify({ mismatches, skipped: r.skipped, errors: r.errors }, null, 2))
+        process.exit(mismatches.length > 0 || r.errors.length > 0 ? 1 : 0)
+      }
+      for (const m of mismatches) {
+        console.log(`  ✗ [receipt-mismatch] metric "${m.key}" is ${m.before.toLocaleString()} in the IR, but its source now returns ${m.after.toLocaleString()}`)
+      }
+      for (const sk of r.skipped) console.log(`  ~ ${sk.key} skipped — ${sk.reason}`)
+      for (const e of r.errors) console.error(`  ✗ ${e.key}: ${e.message}`)
+      if (mismatches.length > 0 || r.errors.length > 0) {
+        console.log(`\n${mismatches.length} receipt mismatch(es), ${r.errors.length} fetch error(s) — the IR does not match its sources`)
+        process.exit(1)
+      }
+      const verified = Object.keys(ir.metrics ?? {}).length - r.skipped.length
+      console.log(`\nreceipts verified (${verified} checked, ${r.skipped.length} skipped) — nothing written`)
+      process.exit(0)
+    }
+
+    // conclusions age too: a claim citing a metric that just moved needs a re-read
+    const changedKeys = new Set(r.changes.map((c) => c.key))
+    const reviewClaims: { claim: string; evidence: string[] }[] = []
+    if (changedKeys.size > 0 && (await exists(reportPath))) {
+      const report = await readFile(reportPath, 'utf8')
+      for (const [, text, evidence] of report.matchAll(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g)) {
+        const cited = evidence.split(',').map((k) => k.trim()).filter((k) => changedKeys.has(k))
+        if (cited.length > 0) reviewClaims.push({ claim: text.trim(), evidence: cited })
+      }
+    }
     if (opts.json) {
-      console.log(JSON.stringify(r, null, 2))
+      console.log(JSON.stringify({ ...r, reviewClaims }, null, 2))
       process.exit(r.errors.length > 0 ? 1 : 0)
     }
     for (const c of r.changes) console.log(`  ${c.key}: ${c.before.toLocaleString()} → ${c.after.toLocaleString()}`)
+    for (const rc of reviewClaims) {
+      console.log(`  ⚠ claim "${rc.claim}" cites ${rc.evidence.join(', ')} — the number moved, review the conclusion`)
+    }
     for (const s of r.skipped) console.log(`  ~ ${s.key} skipped — ${s.reason}`)
     for (const e of r.errors) console.error(`  ✗ ${e.key}: ${e.message}`)
     console.log(
@@ -158,14 +213,15 @@ async function main() {
     process.exit(r.errors.length > 0 ? 1 : 0)
   }
 
-  const result = await compile(reportPath, irPath, { format: opts.format, maxAgeDays: opts.maxAgeDays })
+  const result = await compile(reportPath, irPath, { format: opts.format, maxAgeDays: opts.maxAgeDays, maxRaw: opts.maxRaw })
   const defaultName = opts.format === 'md' ? 'report.grounded.md' : 'report.html'
   const outPath = resolve(opts.out ?? join(reportPath, '..', defaultName))
 
   if (opts.json) {
     console.log(JSON.stringify({ version: pkg.version, ...result, output: undefined, wrote: result.output && !opts.check ? outPath : undefined }, null, 2))
   } else {
-    console.log(`\nwatertight v${pkg.version} · ${result.grounded.metrics} grounded metrics · ${result.grounded.claims} claims · ${result.grounded.identifiers} identifiers`)
+    const rawNote = result.grounded.raw > 0 ? ` · ${result.grounded.raw} raw escape(s)` : ''
+    console.log(`\nwatertight v${pkg.version} · ${result.grounded.metrics} grounded metrics · ${result.grounded.claims} claims · ${result.grounded.identifiers} identifiers${rawNote}`)
     if (result.leaks.length > 0) {
       console.log(`\n${result.leaks.length} leak(s) — the report does not hold water:\n`)
       for (const leak of result.leaks) {

@@ -11,6 +11,8 @@ export interface CompileOptions {
   format?: Format
   /** Fail metrics whose fetched_at is older than this many days — numbers age */
   maxAgeDays?: number
+  /** Fail when the report uses more than this many {{raw:}} escapes */
+  maxRaw?: number
   /** Injectable for tests */
   now?: Date
 }
@@ -19,7 +21,7 @@ export interface CompileResult {
   leaks: Leak[]
   /** Present only when the report holds water */
   output?: string
-  grounded: { metrics: number; identifiers: number; claims: number }
+  grounded: { metrics: number; identifiers: number; claims: number; raw: number }
 }
 
 export async function compile(
@@ -54,6 +56,18 @@ export async function compile(
     metrics: [...report.matchAll(/\{\{m:/g)].length,
     identifiers: [...report.matchAll(/\{\{id:/g)].length,
     claims: [...report.matchAll(/\{\{claim:/g)].length,
+    raw: [...report.matchAll(/\{\{raw:/g)].length,
+  }
+
+  // the escape hatch must stay visible and boundable — wrapping everything in raw
+  // is how an agent games the compile instead of grounding the numbers
+  if (opts.maxRaw !== undefined && grounded.raw > opts.maxRaw) {
+    leaks.push({
+      severity: 'error',
+      rule: 'raw-budget',
+      message: `${grounded.raw} raw escape(s) exceed the budget of ${opts.maxRaw}`,
+      detail: 'Ground the numbers instead, or raise --max-raw deliberately.',
+    })
   }
 
   leaks.push(...scanNakedNumbers(report))

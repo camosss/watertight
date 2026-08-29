@@ -33,6 +33,16 @@ export function renderMarkdown(report: string, ir: Ir): string {
     }
   }
 
+  // the report discloses its own escape hatches — a reader (and a reviewer) sees
+  // exactly which prose numbers carry no receipt
+  const raws = [...protectedReport.matchAll(/\{\{raw:([^}]*)\}\}/g)].map((m) => m[1].trim())
+  const rawSection =
+    raws.length === 0
+      ? ''
+      : `\n\n### Ungrounded (${raws.length} raw escape${raws.length === 1 ? '' : 's'})\n\n${raws
+          .map((r) => `- ${r}`)
+          .join('\n')}`
+
   const appendix = used
     .map((key, i) => {
       const m = ir.metrics[key]
@@ -41,5 +51,5 @@ export function renderMarkdown(report: string, ir: Ir): string {
     })
     .join('\n')
 
-  return `${body.trimEnd()}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}\n`
+  return `${body.trimEnd()}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}${rawSection}\n`
 }
