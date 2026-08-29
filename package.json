@@ -1,6 +1,6 @@
 {
   "name": "watertight",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Reports that hold water — every number carries its receipt, and ungrounded claims fail the build.",
   "type": "module",
   "bin": {
