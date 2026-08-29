@@ -21,19 +21,25 @@ runs:
   steps:
     - name: Check every report
       shell: bash
+      env:
+        WT_PATH: ${{ inputs.path }}
+        WT_MAX_AGE: ${{ inputs.max-age }}
+        WT_VERSION: ${{ inputs.version }}
       run: |
         set -u
-        max_age=""
-        [ -n "${{ inputs.max-age }}" ] && max_age="--max-age ${{ inputs.max-age }}"
-        reports=$(find "${{ inputs.path }}" -name report.md -not -path '*/node_modules/*')
-        if [ -z "$reports" ]; then
-          echo "::error::no report.md found under ${{ inputs.path }} — nothing checked is not a pass"
-          exit 2
-        fi
+        npm install --global --no-fund --no-audit "watertight@${WT_VERSION}"
+        max_age=()
+        [ -n "$WT_MAX_AGE" ] && max_age=(--max-age "$WT_MAX_AGE")
         status=0
-        while IFS= read -r report; do
+        found=0
+        while IFS= read -r -d '' report; do
+          found=1
           dir=$(dirname "$report")
           echo "── $dir"
-          npx --yes "watertight@${{ inputs.version }}" "$dir" --check $max_age || status=1
-        done <<< "$reports"
+          watertight "$dir" --check "${max_age[@]}" || status=1
+        done < <(find "$WT_PATH" -name report.md -not -path '*/node_modules/*' -print0)
+        if [ "$found" -eq 0 ]; then
+          echo "::error::no report.md found under $WT_PATH — nothing checked is not a pass"
+          exit 2
+        fi
         exit $status
