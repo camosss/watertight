@@ -57,8 +57,11 @@ number yet.
   "1,428") is a leak — the id door is not a receipt bypass.
 - Anything computed from other metrics must be `derived` — the compiler
   recomputes it and rejects mismatches beyond the value's own precision.
-  Ops: `sum`, `avg`, `pct_change`, `ratio`, `diff`. Never hand-compute one of
-  these and present it as measured — that is an unverified value.
+  Ops: `sum`/`avg` (`{ "op": "sum", "of": ["k1", "k2"] }`), `pct_change`
+  (`{ "op": "pct_change", "before": "k1", "after": "k2" }`), `ratio`/`diff`
+  (`{ "op": "ratio", "a": "k1", "b": "k2" }` — a/b and a−b). Operands are metric
+  keys (preferred) or inline numbers. Never hand-compute one of these and
+  present it as measured — that is an unverified value.
 - `ratio` / `ratio-point` metrics require a `definition`. Ratios above 1.0
   are legal but the definition must explain the basis.
 - A hypothesis or plan figure is still a metric — source it as

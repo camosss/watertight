@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { compile, type Format } from './compile.js'
 import { basename } from 'node:path'
 import { refresh, type Fetcher } from './refresh.js'
+import { parseIr } from './ir.js'
 import { init } from './init.js'
 import { pathToFileURL } from 'node:url'
 
@@ -164,24 +165,30 @@ async function main() {
     })
 
     if (opts.command === 'verify') {
+      // integrity first: a tampered derived (inputs unchanged, value edited) is not a
+      // cascade — parseIr recomputes every derivation, so verify alone catches it even
+      // in an IR-only directory where no compile ever runs
+      const integrity = parseIr(ir).leaks
       // a change on a MEASURED metric means the IR no longer matches its source —
-      // the receipt is real but the value is not. Derived changes just cascade.
+      // the receipt is real but the value is not. Derived drift is covered above.
       const mismatches = r.changes.filter((c) => !ir.metrics?.[c.key]?.derived)
+      const failing = mismatches.length > 0 || integrity.length > 0 || r.errors.length > 0
       if (opts.json) {
-        console.log(JSON.stringify({ mismatches, skipped: r.skipped, errors: r.errors }, null, 2))
-        process.exit(mismatches.length > 0 || r.errors.length > 0 ? 1 : 0)
+        console.log(JSON.stringify({ mismatches, integrity, skipped: r.skipped, errors: r.errors }, null, 2))
+        process.exit(failing ? 1 : 0)
       }
+      for (const leak of integrity) console.log(`  ✗ [${leak.rule}] ${leak.message}`)
       for (const m of mismatches) {
         console.log(`  ✗ [receipt-mismatch] metric "${m.key}" is ${m.before.toLocaleString()} in the IR, but its source now returns ${m.after.toLocaleString()}`)
       }
       for (const sk of r.skipped) console.log(`  ~ ${sk.key} skipped — ${sk.reason}`)
       for (const e of r.errors) console.error(`  ✗ ${e.key}: ${e.message}`)
-      if (mismatches.length > 0 || r.errors.length > 0) {
-        console.log(`\n${mismatches.length} receipt mismatch(es), ${r.errors.length} fetch error(s) — the IR does not match its sources`)
+      if (failing) {
+        console.log(`\n${mismatches.length} receipt mismatch(es), ${integrity.length} integrity leak(s), ${r.errors.length} fetch error(s) — the IR does not hold water`)
         process.exit(1)
       }
       const verified = Object.keys(ir.metrics ?? {}).length - r.skipped.length
-      console.log(`\nreceipts verified (${verified} checked, ${r.skipped.length} skipped) — nothing written`)
+      console.log(`\nreceipts verified (${verified} checked, ${r.skipped.length} named as skipped) — nothing written`)
       process.exit(0)
     }
 

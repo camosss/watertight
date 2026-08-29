@@ -7,7 +7,7 @@ const lineAt = (text: string, index: number): number =>
   text.slice(0, index).split('\n').length
 
 /** Code shows syntax, it does not state facts — refs and numbers inside it are exempt */
-const blankCode = (report: string): string =>
+export const blankCode = (report: string): string =>
   report.replace(/```[\s\S]*?```/g, blank).replace(/`[^`\n]*`/g, blank)
 
 /**

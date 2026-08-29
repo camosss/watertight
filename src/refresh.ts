@@ -105,7 +105,15 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
   const now = new Date().toISOString().slice(0, 10)
 
   for (const [key, m] of Object.entries(raw.metrics)) {
-    if (m.derived || !m.source || Array.isArray(m.value)) continue
+    if (m.derived) continue // recomputed below, and verified by the compile pass
+    if (Array.isArray(m.value)) {
+      result.skipped.push({ key, reason: 'range values are not re-fetched' })
+      continue
+    }
+    if (!m.source) {
+      result.skipped.push({ key, reason: 'no source to fetch from' })
+      continue
+    }
     try {
       let value: number
       if (m.source.type === 'csv') value = await fetchCsv(m.source, baseDir)
@@ -159,6 +167,10 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
       const rounded = (v: number) => Number(v.toFixed(authorDecimals))
       let computed: number
       if (m.derived.op === 'sum' || m.derived.op === 'avg') {
+        if (!Array.isArray(m.derived.of) || m.derived.of.length === 0) {
+          fail(`${m.derived.op} needs a non-empty "of" array — not recomputed`)
+          continue
+        }
         const total = m.derived.of.reduce((acc, ref) => {
           const part = raw.metrics[ref]
           return acc + (part && typeof part.value === 'number' ? part.value : NaN)
@@ -186,6 +198,10 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
         computed = rounded(m.derived.op === 'ratio' ? a / b : a - b)
       } else {
         fail(`unknown derived op "${(m.derived as { op: string }).op}" — not recomputed`)
+        continue
+      }
+      if (!Number.isFinite(computed)) {
+        fail('recomputation produced a non-finite value — the ledger is never overwritten with NaN')
         continue
       }
       if (computed !== m.value) {

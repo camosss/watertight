@@ -112,3 +112,19 @@ test('refresh points at claims whose evidence moved', async () => {
   assert.equal(r.status, 0)
   assert.match(r.stdout, /⚠ claim "it stayed low" cites web/)
 })
+
+test('verify catches a tampered derived even when no source moved', async () => {
+  const { mkdtemp, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const dir = await mkdtemp(join(tmpdir(), 'wt-tamper-'))
+  await writeFile(join(dir, 'data.csv'), '0.1\n')
+  await writeFile(join(dir, 'metrics.json'), JSON.stringify({
+    metrics: {
+      a: { value: 0.1, unit: 'count', window: 'w', fetched_at: '2026-01-01', source: { type: 'csv', file: 'data.csv', cell: 'A1' } },
+      total: { value: 0.9, unit: 'count', derived: { op: 'sum', of: ['a'] } },
+    },
+  }))
+  const r = cli('verify', dir)
+  assert.equal(r.status, 1)
+  assert.match(r.stdout, /derived-mismatch/)
+})

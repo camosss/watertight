@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { parseIr } from './ir.js'
 import { render } from './render.js'
 import { renderMarkdown } from './renderMd.js'
-import { scanMarkers, scanNakedNumbers, scanRefs } from './scan.js'
+import { blankCode, scanMarkers, scanNakedNumbers, scanRefs } from './scan.js'
 import type { Leak } from './types.js'
 
 export type Format = 'html' | 'md'
@@ -52,11 +52,14 @@ export async function compile(
     }
   }
 
+  // counted on code-blanked text so a fenced syntax example is neither a grounded
+  // metric nor a raw escape — the header, the scanner and the render must agree
+  const prose = blankCode(report)
   const grounded = {
-    metrics: [...report.matchAll(/\{\{m:/g)].length,
-    identifiers: [...report.matchAll(/\{\{id:/g)].length,
-    claims: [...report.matchAll(/\{\{claim:/g)].length,
-    raw: [...report.matchAll(/\{\{raw:/g)].length,
+    metrics: [...prose.matchAll(/\{\{m:/g)].length,
+    identifiers: [...prose.matchAll(/\{\{id:/g)].length,
+    claims: [...prose.matchAll(/\{\{claim:/g)].length,
+    raw: [...prose.matchAll(/\{\{raw:/g)].length,
   }
 
   // the escape hatch must stay visible and boundable — wrapping everything in raw

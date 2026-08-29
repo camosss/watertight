@@ -35,7 +35,7 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
   const identifiers: Record<string, string> = {}
   // an identifier names a thing (version, flag, unit id); a value shaped like a
   // measurement is a number smuggled past the receipt requirement through the id door
-  const MEASUREMENT_SHAPE = /(%p?$)|(^\d{1,3}(,\d{3})+(\.\d+)?$)/
+  const MEASUREMENT_SHAPE = /(%p?$)|(^\d{1,3}(,\d{3})+(\.\d+)?$)|(^\d+(\.\d+)?\s*(원|건|명|회)$)/
   for (const [k, v] of Object.entries((root['identifiers'] as object) ?? {})) {
     identifiers[k] = String(v)
     if (MEASUREMENT_SHAPE.test(identifiers[k].trim())) {
@@ -94,6 +94,14 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
         return ref && typeof ref.value === 'number' ? ref.value : undefined
       }
       if (m.derived.op === 'sum' || m.derived.op === 'avg') {
+        if (!Array.isArray(m.derived.of) || m.derived.of.length === 0) {
+          leaks.push({
+            severity: 'error',
+            rule: 'bad-derived',
+            message: `metric "${key}": ${m.derived.op} needs a non-empty "of" array of metric keys`,
+          })
+          continue
+        }
         let total = 0
         let broken = false
         for (const ref of m.derived.of) {

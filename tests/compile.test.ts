@@ -353,3 +353,30 @@ test('raw escapes are counted, disclosed in the md appendix, and boundable', asy
   const gated = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'), { maxRaw: 1 })
   assert.deepEqual(gated.leaks.map((l) => l.rule), ['raw-budget'])
 })
+
+test('a malformed derived "of" is a leak, not a crash or a letter-by-letter loop', async () => {
+  for (const of of [undefined, 'ab', []]) {
+    const { leaks } = await compileCase('T {{m:t}}.', {
+      metrics: { t: { value: 5, unit: 'count', derived: { op: 'sum', of } } },
+    })
+    assert.equal(leaks.some((l) => l.rule === 'bad-derived'), true, `of=${JSON.stringify(of)}`)
+  }
+})
+
+test('fenced syntax examples count toward nothing — header, scanner and render agree', async () => {
+  const { grounded } = await compileCase(
+    'Real {{m:x}} and {{raw:24/7}}.\n\n```\n{{raw:example}} {{m:demo}} {{claim: d | evidence: x}}\n```',
+    { metrics: { x: MEASURED } }, 'md',
+  )
+  assert.equal(grounded.metrics, 1)
+  assert.equal(grounded.raw, 1)
+  assert.equal(grounded.claims, 0)
+})
+
+test('Korean counter units are measurements in an identifier; 초 stays a name', async () => {
+  const { leaks } = await compileCase('{{id:rev}} {{id:cnt}} {{id:timeout}} {{m:x}}', {
+    metrics: { x: MEASURED },
+    identifiers: { rev: '1428원', cnt: '72건', timeout: '30초' },
+  })
+  assert.equal(leaks.filter((l) => l.rule === 'identifier-measurement').length, 2)
+})

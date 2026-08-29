@@ -191,3 +191,15 @@ test('refresh never writes float noise into a sum the author stated exactly', as
   const written = JSON.parse(await readFile(irPath, 'utf8'))
   assert.equal(written.metrics.total.value, 0.3)
 })
+
+test('an empty avg never writes NaN into the ledger, and sourceless metrics are named', async () => {
+  const { irPath } = await setup({
+    t: { value: 5, unit: 'count', derived: { op: 'avg', of: [] } },
+    orphan: { value: 7, unit: 'count', window: 'w', fetched_at: 'old' },
+  })
+  const result = await refresh(irPath, { allowCommands: false, dryRun: false })
+  assert.equal(result.errors.some((e) => e.key === 't'), true)
+  assert.equal(result.skipped.some((s) => s.key === 'orphan' && /no source/.test(s.reason)), true)
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.t.value, 5)
+})
