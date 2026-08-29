@@ -477,3 +477,37 @@ test('unused-metric is info: reported, never failing, exempt when feeding a deri
   assert.match(unused[0].message, /"orphan"/)
   assert.ok(output)
 })
+
+test('a non-string, non-number assertion operand is a leak, cited or not', async () => {
+  for (const bad of [null, true, { lo: 1 }]) {
+    const { leaks, output } = await compileCase('V {{m:x}}.', {
+      metrics: { x: MEASURED },
+      assertions: { ghost: { op: 'lt', a: bad, b: 5 } },
+    })
+    assert.equal(leaks.some((l) => l.rule === 'bad-assertion'), true, `a=${JSON.stringify(bad)}`)
+    assert.equal(output, undefined)
+  }
+})
+
+test('한 번 and double-check are rhetoric; 두 번 and doubled still warn', async () => {
+  const miss = await compileCase('한 번 더 확인했고 double-check 했다. {{m:x}}', { metrics: { x: MEASURED } })
+  assert.equal(miss.leaks.filter((l) => l.rule === 'worded-number').length, 0)
+  const hit = await compileCase('두 번 실패했고 revenue doubled. {{m:x}}', { metrics: { x: MEASURED } })
+  assert.equal(hit.leaks.filter((l) => l.rule === 'worded-number').length, 2)
+})
+
+test('the markdown appendix shows what each assertion judged', async () => {
+  const { output } = await compileCase(
+    'T {{m:total}} vs {{m:target}}. {{claim: under | evidence: under_target}}',
+    {
+      metrics: {
+        total: { ...MEASURED, value: 1428 },
+        target: { value: [30000, 140000], unit: '원', source: { type: 'hypothesis' }, window: 'w', fetched_at: '-' },
+      },
+      assertions: { under_target: { op: 'lt', a: 'total', b: 'target.lo' } },
+    },
+    'md',
+  )
+  assert.match(output ?? '', /### Assertions \(1\)/)
+  assert.match(output ?? '', /\*\*under_target\*\*: 1,428 lt 30,000 — holds/)
+})

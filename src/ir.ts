@@ -190,8 +190,12 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
       continue
     }
     const a = raw as Partial<Assertion> | null
-    if (!a || typeof a !== 'object' || typeof a.op !== 'string' || a.a === undefined || a.b === undefined) {
-      leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}" needs op, a and b` })
+    const validOperand = (v: unknown): v is number | string =>
+      (typeof v === 'number' && Number.isFinite(v)) || typeof v === 'string'
+    if (!a || typeof a !== 'object' || typeof a.op !== 'string' || !validOperand(a.a) || !validOperand(a.b)) {
+      // null, booleans, objects — a guard that only checks undefined lets a serialisation
+      // slip silently disarm the very device meant to guard the conclusion
+      leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}" needs op, and operands that are numbers or metric keys` })
       continue
     }
     if (!(a.op in OPS)) {

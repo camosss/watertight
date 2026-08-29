@@ -46,6 +46,28 @@ export function renderMarkdown(report: string, ir: Ir): string {
           .map((r) => `- ${r}`)
           .join('\n')}`
 
+  // assertions render their judgement, not just their name — the html reader gets it
+  // on hover, the markdown reader gets it here
+  const resolveOperand = (v: number | string): number | undefined => {
+    if (typeof v === 'number') return v
+    const accessor = /^([\w-]+)\.(lo|hi)$/.exec(v)
+    const m = ir.metrics[accessor ? accessor[1] : v]
+    if (!m) return undefined
+    if (accessor && Array.isArray(m.value)) return accessor[2] === 'lo' ? m.value[0] : m.value[1]
+    return typeof m.value === 'number' ? m.value : undefined
+  }
+  const assertionEntries = Object.entries(ir.assertions)
+  const assertionSection =
+    assertionEntries.length === 0
+      ? ''
+      : `\n\n### Assertions (${assertionEntries.length})\n\n${assertionEntries
+          .map(([key, a]) => {
+            const left = resolveOperand(a.a)
+            const right = resolveOperand(a.b)
+            return `- **${key}**: ${left?.toLocaleString() ?? a.a} ${a.op} ${right?.toLocaleString() ?? a.b} — holds`
+          })
+          .join('\n')}`
+
   const appendix = used
     .map((key, i) => {
       const m = ir.metrics[key]
@@ -55,5 +77,5 @@ export function renderMarkdown(report: string, ir: Ir): string {
     })
     .join('\n')
 
-  return `${body.trimEnd()}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}${rawSection}\n`
+  return `${body.trimEnd()}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}${assertionSection}${rawSection}\n`
 }

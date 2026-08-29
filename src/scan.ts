@@ -129,9 +129,11 @@ export function scanMarkers(rawReport: string): Leak[] {
 
 // Narrow on purpose: a false worded-number on 배송 or 건물 costs more trust than a
 // missed 수사 표현. Longest alternatives first; boundaries block compound words.
-const WORDED_KO_COUNTED = /(?<![가-힣])(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)\s?(배|건|명|번|곳|개)(?![가-힣])/g
+// "한 번" is far more often rhetoric ("한 번 더", "한 번에") than a count — excluded;
+// "두 번" and "몇 번" stay in
+const WORDED_KO_COUNTED = /(?<![가-힣])((두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)\s?(배|건|명|번|곳|개)|한\s?(배|건|명|곳|개))(?![가-힣])/g
 const WORDED_KO_STANDALONE = /(?<![가-힣])(절반|과반|대다수|수십만|수백만|수천만|수억|수십|수백|수천|수만)(\s?(배|건|명|번|곳|개|원|회))?(?![가-힣])/g
-const WORDED_EN = /\b(doubled?|tripled?|halved|half of|a million|millions of|thousands of|dozens of)\b/gi
+const WORDED_EN = /\b(doubled?|tripled?|halved)(?![\w-])|\b(half of|a million|millions of|thousands of|dozens of)\b/gi
 
 /** Quantities written in words — the digit scanner cannot see them, but a reader does. */
 export function scanWordedNumbers(report: string): Leak[] {
