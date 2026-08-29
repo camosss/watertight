@@ -80,7 +80,9 @@ a measured metric says where it was fetched, over what window, and when:
 ```
 
 A **derived** metric is recomputed on every compile — a total that doesn't add
-up, or a delta that doesn't recompute, is a build failure:
+up, or a delta that doesn't recompute, is a build failure. Ops: `sum`, `avg`,
+`pct_change`, `ratio` (a / b), `diff` (a − b) — the arithmetic reports actually
+do, so hand-computed values don't have to masquerade as measured ones:
 
 ```json
 "lift": {
@@ -121,6 +123,10 @@ hypothesised {{m:revenue_target}}.
 
 Support runs {{raw:24/7}}.
 ```
+
+`{{raw:}}` is the escape hatch, and it stays visible: the compile header counts
+raw escapes, the markdown render lists them in an **Ungrounded** section, and
+`--max-raw <n>` turns the count into a gate.
 
 Compile:
 
@@ -174,13 +180,29 @@ figure shows its receipt.
 | `bad-derived` | derived ops referencing missing or non-numeric inputs |
 | `empty-ir` | a report "grounded" in nothing |
 | `stale-metric` | with `--max-age <days>`: a receipt whose `fetched_at` is older than the budget — numbers age |
+| `identifier-measurement` | an identifier whose value is shaped like a measurement (`"47%"`, `"1,428"`) — a number smuggled past the receipt requirement through the id door |
+| `raw-budget` | with `--max-raw <n>`: more `{{raw:}}` escapes than the budget — the escape hatch stays boundable |
 
 <br>
 
 ## Re-verification
 
-Numbers age. `watertight refresh .` re-fetches every metric whose source it
-can reach, rewrites `value` and `fetched_at`, and recomputes derived values:
+**`watertight verify .`** re-fetches every reachable source and *compares* —
+a stored value the source no longer returns is a `receipt-mismatch`, nothing
+is written, and the run fails. This is the check that catches a plausible
+receipt attached to a wrong value (the "AI remembered a number" failure) and
+the natural CI companion to `--check`.
+
+`watertight refresh .` is the writing counterpart: it re-fetches, rewrites
+`value` and `fetched_at`, recomputes derived values — and when a changed
+metric is cited as claim evidence, it says so:
+
+```
+  fallback_revenue_total: 1,428 → 45,200
+  ⚠ claim "수익 가설 미달" cites fallback_revenue_total — the number moved, review the conclusion
+```
+
+Conclusions age like numbers do. Sources:
 
 - `csv` sources — `{ "type": "csv", "file": "data.csv", "cell": "B2" }`
 - `json` sources — `{ "type": "json", "file": "kpi.json", "path": "revenue.total" }`

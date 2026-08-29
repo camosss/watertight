@@ -53,9 +53,12 @@ number yet.
 - `source.type` is free-form (`sql`, `mixpanel`, `csv`, `hypothesis`, …);
   put enough alongside it that a stranger could re-fetch the value.
 - Numbers that *name* rather than *measure* (versions, flags, unit IDs) go
-  in `identifiers`, not `metrics`.
+  in `identifiers`, not `metrics`. A measurement-shaped identifier ("47%",
+  "1,428") is a leak — the id door is not a receipt bypass.
 - Anything computed from other metrics must be `derived` — the compiler
   recomputes it and rejects mismatches beyond the value's own precision.
+  Ops: `sum`, `avg`, `pct_change`, `ratio`, `diff`. Never hand-compute one of
+  these and present it as measured — that is an unverified value.
 - `ratio` / `ratio-point` metrics require a `definition`. Ratios above 1.0
   are legal but the definition must explain the basis.
 - A hypothesis or plan figure is still a metric — source it as
@@ -87,7 +90,10 @@ a measurement in `{{raw:}}` to silence the checker. A `derived-mismatch` is
 the tool telling you a stated total or delta does not follow from its
 inputs: recompute at the source and correct whichever side is wrong.
 
-**5. Re-verify later with `watertight refresh .`** — re-fetches csv/json
+**5. Before shipping, run `watertight verify .`** — it re-fetches every
+reachable source and fails on any stored value the source does not return.
+A receipt you attached from memory will not survive this step; that is the
+point. Then re-verify later with `watertight refresh .` — re-fetches csv/json
 sources, updates `fetched_at`, recomputes derived values, and names every
 metric it could *not* refresh. `command` sources run only under
 `--allow-commands`; never pass that flag on an IR you did not author.
@@ -105,5 +111,7 @@ exists to make that judgment inspectable, not to automate it away.
 ## Hard rules
 
 - Never invent, estimate, or "recall" a value into the IR. No source, no number.
+- Never wrap a measurement in `{{raw:}}` to pass the compile — raw counts are
+  printed, disclosed in the render, and gated by `--max-raw`.
 - Never edit a `value` to make a `derived-mismatch` pass. Fix the inputs.
 - Real company data stays in private storage; fixtures and examples are fictional.
