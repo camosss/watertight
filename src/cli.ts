@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { compile, type Format } from './compile.js'
 import { basename } from 'node:path'
 import { refresh, type Fetcher } from './refresh.js'
+import { init } from './init.js'
 import { pathToFileURL } from 'node:url'
 
 const USAGE = `watertight — reports that hold water. Every number carries its receipt;
@@ -13,6 +14,7 @@ Usage
   watertight <dir>             compile <dir>/report.md + <dir>/metrics.json → <dir>/report.html
   watertight <report> <ir>     explicit file paths
   watertight refresh <dir>     re-fetch metric values from their sources, update metrics.json
+  watertight init [dir]        scaffold a report.md + metrics.json pair that already holds water
 
 Options
   --max-age <days>   compile only: fail any metric whose fetched_at is older —
@@ -68,8 +70,8 @@ function parseArgs(argv: string[]) {
     else if (arg === '-v' || arg === '--version') version = true
     else if (!arg.startsWith('-')) positional.push(arg)
   }
-  const command = positional[0] === 'refresh' ? 'refresh' : 'compile'
-  if (command === 'refresh') positional.shift()
+  const command = positional[0] === 'refresh' ? 'refresh' : positional[0] === 'init' ? 'init' : 'compile'
+  if (command !== 'compile') positional.shift()
   return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays }
 }
 
@@ -90,6 +92,19 @@ async function main() {
 
   if (opts.version) return console.log(pkg.version)
   if (opts.help) return console.log(USAGE)
+
+  if (opts.command === 'init') {
+    const dir = resolve(opts.positional[0] ?? '.')
+    try {
+      const { written } = await init(dir)
+      for (const f of written) console.log(`  + ${f}`)
+      console.log('\nCompile it: watertight ' + (opts.positional[0] ?? '.'))
+      process.exit(0)
+    } catch (err) {
+      console.error(`error: ${err instanceof Error ? err.message : String(err)}`)
+      process.exit(2)
+    }
+  }
 
   // a mistyped path must fail loudly, never read as an empty report
   let reportPath: string

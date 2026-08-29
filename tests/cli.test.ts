@@ -39,3 +39,20 @@ test('refresh --fetchers loads the named module; an empty module is exit 2', asy
   assert.equal(empty.status, 2)
   assert.match(empty.stderr, /exports no functions/)
 })
+
+test('init scaffolds a pair that holds water, and never overwrites', async () => {
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const dir = await mkdtemp(join(tmpdir(), 'wt-init-'))
+
+  const first = cli('init', dir)
+  assert.equal(first.status, 0)
+
+  const compiled = cli(dir, '--check')
+  assert.equal(compiled.status, 0)
+  assert.match(compiled.stdout, /holds water/)
+
+  const second = cli('init', dir)
+  assert.equal(second.status, 2)
+  assert.match(second.stderr, /refusing to overwrite/)
+})
