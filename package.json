@@ -1,10 +1,10 @@
 {
   "name": "watertight",
   "version": "0.1.0",
-  "description": "Reports that hold water \u2014 every number carries its receipt, and ungrounded claims fail the build.",
+  "description": "Reports that hold water — every number carries its receipt, and ungrounded claims fail the build.",
   "type": "module",
   "bin": {
-    "watertight": "./dist/cli.js"
+    "watertight": "dist/cli.js"
   },
   "files": [
     "dist",
