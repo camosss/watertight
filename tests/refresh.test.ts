@@ -176,3 +176,18 @@ test('a derived reading another derived settles in one refresh, and broken sums 
   assert.deepEqual(result.errors.map((e) => e.key), ['broken'])
   assert.match(result.errors[0].message, /not recomputed/)
 })
+
+test('refresh never writes float noise into a sum the author stated exactly', async () => {
+  const { irPath } = await setup(
+    {
+      a: { ...MEASURED, value: 0.1, source: { type: 'csv', file: 'v.csv', cell: 'A1' } },
+      b: { ...MEASURED, value: 0.2 },
+      total: { value: 0.3, unit: 'count', derived: { op: 'sum', of: ['a', 'b'] } },
+    },
+    { 'v.csv': '0.1\n' },
+  )
+  const result = await refresh(irPath, { allowCommands: false, dryRun: false })
+  assert.deepEqual(result.changes, [])
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.total.value, 0.3)
+})

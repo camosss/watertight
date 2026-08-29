@@ -301,3 +301,15 @@ test('evidence-only metrics appear in the receipts appendix', async () => {
   assert.match(output ?? '', /### Receipts \(2 metrics\)/)
   assert.match(output ?? '', /\*\*hidden\*\* = 7/)
 })
+
+test('letter-prefixed tokens are names — Q3 and v6.109.0 pass, 약30% does not', async () => {
+  const ok = await compileCase('# Q3 rollout in v6.109.0 on iOS15\n\nBody {{m:x}}.', { metrics: { x: MEASURED } })
+  assert.equal(ok.leaks.length, 0)
+  const korean = await compileCase('약30% 상승. {{m:x}}', { metrics: { x: MEASURED } })
+  assert.deepEqual(korean.leaks.map((l) => l.rule), ['naked-number'])
+})
+
+test('a null metric object is a leak with a name, not a crash', async () => {
+  const { leaks } = await compileCase('V {{m:x}}.', { metrics: { x: null } })
+  assert.equal(leaks.some((l) => l.rule === 'missing-field' && l.message.includes('"x"')), true)
+})

@@ -49,6 +49,10 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
   }
 
   for (const [key, m] of Object.entries(metrics)) {
+    if (!m || typeof m !== 'object') {
+      leaks.push({ severity: 'error', rule: 'missing-field', message: `metric "${key}" is not an object` })
+      continue
+    }
     const valueOk =
       isFiniteNumber(m.value) ||
       (Array.isArray(m.value) && m.value.length === 2 && m.value.every(isFiniteNumber))

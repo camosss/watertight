@@ -158,6 +158,10 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
           fail('sum references unknown or non-scalar metrics — not recomputed')
           continue
         }
+        // author precision, same as pct_change — 0.1+0.2 must not write
+        // 0.30000000000000004 into the IR or report a phantom "0.3 → 0.3" change
+        const sumDecimals = (String(m.value).split('.')[1] ?? '').length
+        computed = Number(computed.toFixed(Math.max(sumDecimals, 0)))
       } else if (m.derived.op === 'pct_change') {
         const endpoint = (v: number | string): number | undefined => {
           if (typeof v === 'number') return v

@@ -30,6 +30,7 @@ export function scanNakedNumbers(report: string): Leak[] {
     .replace(/\]\([^)\s]*\)/g, blank)          // markdown link targets — URLs locate, they do not measure
     .replace(/https?:\/\/\S+/g, blank)         // bare URLs, same reason
     .replace(/\d{4}-\d{2}-\d{2}/g, blank)      // ISO dates locate, they do not measure
+    .replace(/(?<![A-Za-z0-9가-힣])[A-Za-z]+\d[\w.\-]*/g, blank) // Q3, v6.109.0, iOS15 — names, not measurements
     .replace(/^#{1,6}(?= )/gm, blank)          // heading markers only — heading TEXT is scanned, people summarise numbers there
     .replace(/^\s*\d+\.\s/gm, blank)           // ordered-list markers
 
