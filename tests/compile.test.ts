@@ -47,12 +47,18 @@ test('a number outside a reference is a leak', async () => {
   assert.equal(html, undefined)
 })
 
-test('dates, headings, code and raw spans are not leaks', async () => {
+test('dates, code, urls and raw spans are not leaks — heading text is', async () => {
   const { leaks } = await compileCase(
-    '# 2 phases\n\nSince 2026-09-01, `retry(3)` ran. Roughly {{raw:one in five}} sessions. Count: {{m:x}}',
+    '# Rollout\n\nSince 2026-09-01, `retry(3)` ran. Roughly {{raw:one in five}} sessions. '
+      + 'See [dash](https://mixpanel.com/project/2773336) or https://x.com/p/42. Count: {{m:x}}',
     { metrics: { x: MEASURED } },
   )
   assert.equal(leaks.length, 0)
+
+  // people summarise numbers in headings — those are claims like any other
+  const heading = await compileCase('# Growth hit 47% this quarter\n\nBody {{m:x}}.', { metrics: { x: MEASURED } })
+  assert.deepEqual(heading.leaks.map((l) => l.rule), ['naked-number'])
+  assert.match(heading.leaks[0].message, /47%/)
 })
 
 test('a dangling reference is a leak', async () => {
@@ -220,4 +226,53 @@ test('max-age fails old receipts, spares fresh ones and dateless hypotheses', as
   // without the flag, age is not checked
   const lax = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'))
   assert.equal(lax.leaks.length, 0)
+})
+
+test('float sums are compared at the stored precision, not bit-exactly', async () => {
+  const part = (v: number) => ({ ...MEASURED, value: v, unit: 'ratio', definition: 'd' })
+  const ok = await compileCase('Total {{m:t}} of {{m:a}} {{m:b}}.', {
+    metrics: { a: part(0.1), b: part(0.2), t: { value: 0.3, unit: 'ratio', definition: 'd', derived: { op: 'sum', of: ['a', 'b'] } } },
+  })
+  assert.equal(ok.leaks.length, 0)
+  const bad = await compileCase('Total {{m:t}} of {{m:a}} {{m:b}}.', {
+    metrics: { a: part(0.1), b: part(0.2), t: { value: 0.31, unit: 'ratio', definition: 'd', derived: { op: 'sum', of: ['a', 'b'] } } },
+  })
+  assert.deepEqual(bad.leaks.map((l) => l.rule), ['derived-mismatch'])
+})
+
+test('an unknown derived op is a leak, never a verification bypass', async () => {
+  const { leaks } = await compileCase('Sneaky {{m:s}}.', {
+    metrics: { s: { value: 999, unit: 'USD', derived: { op: 'avg', of: ['s'] } } },
+  })
+  assert.deepEqual(leaks.map((l) => l.rule), ['bad-derived'])
+  assert.match(leaks[0].message, /unknown derived op "avg"/)
+})
+
+test('a typo in a marker is a leak, not verbatim output', async () => {
+  const { leaks } = await compileCase(
+    'Total {{m:x}}. {{claim: it works | evidnce: x}} And {{m: x}} too.',
+    { metrics: { x: MEASURED } },
+  )
+  assert.deepEqual(leaks.map((l) => l.rule).sort(), ['malformed-marker', 'malformed-marker'])
+})
+
+test('a null value is a missing-field leak, not a crash', async () => {
+  const { leaks } = await compileCase('V {{m:x}}.', { metrics: { x: { ...MEASURED, value: null } } })
+  assert.equal(leaks.some((l) => l.rule === 'missing-field'), true)
+})
+
+test('exponential notation does not disarm the precision check', async () => {
+  const part = (v: number) => ({ ...MEASURED, value: v })
+  const { leaks } = await compileCase('T {{m:t}} {{m:a}} {{m:b}}.', {
+    metrics: { a: part(1e-7), b: part(5e-8), t: { value: 1e-7, unit: 'count', derived: { op: 'sum', of: ['a', 'b'] } } },
+  })
+  assert.deepEqual(leaks.map((l) => l.rule), ['derived-mismatch'])
+})
+
+test('a syntax example inside a code fence is neither substituted nor a dangling ref', async () => {
+  const report = 'Real: {{m:x}}.\n\n```\nExample: {{m:ghost}} renders the value\n```\n\nInline `{{id:nope}}` too.'
+  const { leaks, output } = await compileCase(report, { metrics: { x: MEASURED } }, 'md')
+  assert.equal(leaks.length, 0)
+  assert.ok(output?.includes('{{m:ghost}}'))
+  assert.ok(output?.includes('{{id:nope}}'))
 })

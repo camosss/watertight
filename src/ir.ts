@@ -5,9 +5,19 @@ const DEFINITION_REQUIRED = new Set(['ratio', 'ratio-point'])
 
 function decimals(n: number): number {
   const s = String(n)
+  const e = s.indexOf('e')
+  if (e !== -1) {
+    // 1e-7 has 7 decimals, 1.5e-7 has 8 — exponential notation must not disarm the precision check
+    const exp = Number(s.slice(e + 1))
+    const mantissa = s.slice(0, e)
+    const dot = mantissa.indexOf('.')
+    return Math.max(0, (dot === -1 ? 0 : mantissa.length - dot - 1) - exp)
+  }
   const dot = s.indexOf('.')
   return dot === -1 ? 0 : s.length - dot - 1
 }
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 /**
  * A stored derived value must be correctly rounded to its own precision: writing 0.15
@@ -39,8 +49,11 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
   }
 
   for (const [key, m] of Object.entries(metrics)) {
-    if (m.value === undefined) {
-      leaks.push({ severity: 'error', rule: 'missing-field', message: `metric "${key}" has no value` })
+    const valueOk =
+      isFiniteNumber(m.value) ||
+      (Array.isArray(m.value) && m.value.length === 2 && m.value.every(isFiniteNumber))
+    if (!valueOk) {
+      leaks.push({ severity: 'error', rule: 'missing-field', message: `metric "${key}" has no usable numeric value` })
       continue
     }
     if (typeof m.unit !== 'string' || m.unit.length === 0) {
@@ -72,7 +85,7 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
           }
           computed += part.value
         }
-        if (!broken && computed !== m.value) {
+        if (!broken && !roundsTo(m.value, computed)) {
           leaks.push({
             severity: 'error',
             rule: 'derived-mismatch',
@@ -104,6 +117,14 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
             detail: 'A derived value must be correctly rounded to its own precision.',
           })
         }
+      } else {
+        // an op the verifier cannot recompute must never pass as verified
+        leaks.push({
+          severity: 'error',
+          rule: 'bad-derived',
+          message: `metric "${key}" has unknown derived op "${(m.derived as { op: string }).op}"`,
+          detail: 'Supported ops: sum, pct_change. A derivation the compiler cannot recompute cannot hold water.',
+        })
       }
     } else {
       // a measured value must say where it came from and when

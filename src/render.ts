@@ -1,5 +1,18 @@
 import type { Ir, Metric } from './types.js'
 
+/**
+ * Code shows syntax, it does not state facts — a fenced example of {{m:…}} must render
+ * verbatim, not substitute. Stash code regions before substitution, restore after.
+ */
+export function protectCode(text: string): { text: string; restore: (s: string) => string } {
+  const stash: string[] = []
+  const protectedText = text.replace(/```[\s\S]*?```|`[^`\n]*`/g, (m) => {
+    stash.push(m)
+    return `\u0000${stash.length - 1}\u0000`
+  })
+  return { text: protectedText, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[Number(i)]) }
+}
+
 function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
@@ -40,7 +53,8 @@ function markdown(src: string): string {
 }
 
 export function render(report: string, ir: Ir): string {
-  const grounded = escapeHtml(report)
+  const { text: protectedReport, restore } = protectCode(escapeHtml(report))
+  const grounded = restore(protectedReport
     .replace(/\{\{m:([\w-]+)\}\}/g, (_, key) => {
       const m = ir.metrics[key]
       return `<b class="w" title="${escapeHtml(receipt(m))}">${formatValue(m)}<sup>†</sup></b>`
@@ -53,7 +67,7 @@ export function render(report: string, ir: Ir): string {
         .join(' | ')
       return `<span class="c" title="${escapeHtml(receipts)}">${text.trim()}<sup>‡</sup></span>`
     })
-    .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => escapeHtml(text))
+    .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => escapeHtml(text)))
 
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>

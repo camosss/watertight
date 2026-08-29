@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { parseIr } from './ir.js'
 import { render } from './render.js'
 import { renderMarkdown } from './renderMd.js'
-import { scanNakedNumbers, scanRefs } from './scan.js'
+import { scanMarkers, scanNakedNumbers, scanRefs } from './scan.js'
 import type { Leak } from './types.js'
 
 export type Format = 'html' | 'md'
@@ -57,6 +57,7 @@ export async function compile(
   }
 
   leaks.push(...scanNakedNumbers(report))
+  leaks.push(...scanMarkers(report))
   if (ir) leaks.push(...scanRefs(report, new Set(Object.keys(ir.metrics)), new Set(Object.keys(ir.identifiers))))
 
   if (leaks.length > 0 || !ir) return { leaks, grounded }

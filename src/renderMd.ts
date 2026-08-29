@@ -1,4 +1,4 @@
-import { formatValue, receipt } from './render.js'
+import { formatValue, protectCode, receipt } from './render.js'
 import type { Ir } from './types.js'
 
 const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹'
@@ -13,7 +13,8 @@ const sup = (n: number): string => `⁽${String(n).split('').map((d) => SUPERSCR
 export function renderMarkdown(report: string, ir: Ir): string {
   const used: string[] = []
 
-  const body = report
+  const { text: protectedReport, restore } = protectCode(report)
+  const body = restore(protectedReport
     .replace(/\{\{m:([\w-]+)\}\}/g, (_, key) => {
       if (!used.includes(key)) used.push(key)
       return `**${formatValue(ir.metrics[key])}** ${sup(used.indexOf(key) + 1)}`
@@ -23,7 +24,7 @@ export function renderMarkdown(report: string, ir: Ir): string {
       /\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g,
       (_, text, evidence) => `**${text.trim()}** *(evidence: ${evidence.trim()})*`,
     )
-    .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => text)
+    .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => text))
 
   const appendix = used
     .map((key, i) => {

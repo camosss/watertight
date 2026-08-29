@@ -6,6 +6,10 @@ const blank = (s: string): string => s.replace(/[^\n]/g, ' ')
 const lineAt = (text: string, index: number): number =>
   text.slice(0, index).split('\n').length
 
+/** Code shows syntax, it does not state facts — refs and numbers inside it are exempt */
+const blankCode = (report: string): string =>
+  report.replace(/```[\s\S]*?```/g, blank).replace(/`[^`\n]*`/g, blank)
+
 /**
  * Find numbers in the narrative that are not bound to the IR. These are the leaks the
  * tool exists to catch: a typed, transcribed, or hallucinated figure reads exactly like
@@ -23,13 +27,15 @@ export function scanNakedNumbers(report: string): Leak[] {
     .replace(/\{\{raw:[^}]*\}\}/g, blank)     // explicit, greppable escape hatch
     .replace(/```[\s\S]*?```/g, blank)         // fenced code
     .replace(/`[^`\n]*`/g, blank)              // inline code
+    .replace(/\]\([^)\s]*\)/g, blank)          // markdown link targets — URLs locate, they do not measure
+    .replace(/https?:\/\/\S+/g, blank)         // bare URLs, same reason
     .replace(/\d{4}-\d{2}-\d{2}/g, blank)      // ISO dates locate, they do not measure
-    .replace(/^#+ .*$/gm, blank)               // headings
+    .replace(/^#{1,6}(?= )/gm, blank)          // heading markers only — heading TEXT is scanned, people summarise numbers there
     .replace(/^\s*\d+\.\s/gm, blank)           // ordered-list markers
 
   const leaks: Leak[] = []
   for (const m of stripped.matchAll(/\d[\d,.]*\s*(%p?|[가-힣]{1,2})?/g)) {
-    const token = m[0].trim()
+    const token = m[0].trim().replace(/[.,]+$/, '')
     if (!token) continue
     leaks.push({
       severity: 'error',
@@ -43,8 +49,9 @@ export function scanNakedNumbers(report: string): Leak[] {
 }
 
 /** Every reference in the narrative must resolve; a dangling one is authoring drift. */
-export function scanRefs(report: string, metricKeys: Set<string>, idKeys: Set<string>): Leak[] {
+export function scanRefs(rawReport: string, metricKeys: Set<string>, idKeys: Set<string>): Leak[] {
   const leaks: Leak[] = []
+  const report = blankCode(rawReport)
   for (const m of report.matchAll(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g)) {
     const [, text, evidence] = m
     const line = lineAt(report, m.index)
@@ -83,6 +90,29 @@ export function scanRefs(report: string, metricKeys: Set<string>, idKeys: Set<st
     if (!idKeys.has(m[1])) {
       leaks.push({ severity: 'error', rule: 'unknown-ref', line: lineAt(report, m.index), message: `{{id:${m[1]}}} is not in the IR` })
     }
+  }
+  return leaks
+}
+
+/**
+ * Anything still shaped like a marker after every recognised form is removed was a typo —
+ * and a typo'd marker must be a leak, or it renders verbatim and its number sails through.
+ */
+export function scanMarkers(rawReport: string): Leak[] {
+  const known = blankCode(rawReport)
+    .replace(/\{\{(m|id):[\w-]+\}\}/g, blank)
+    .replace(/\{\{raw:[^}]*\}\}/g, blank)
+    .replace(/\{\{claim:[^|}]*\|\s*evidence:[^}]*\}\}/g, blank)
+    .replace(/\{\{claim:[^|}]*\}\}/g, blank) // no-pipe form is already claim-without-evidence
+  const leaks: Leak[] = []
+  for (const m of known.matchAll(/\{\{[^}]*\}\}?/g)) {
+    leaks.push({
+      severity: 'error',
+      rule: 'malformed-marker',
+      line: lineAt(known, m.index),
+      message: `"${m[0]}" is not a recognised marker`,
+      detail: 'Valid forms: {{m:key}}, {{id:key}}, {{raw:…}}, {{claim: text | evidence: keys}}.',
+    })
   }
   return leaks
 }
