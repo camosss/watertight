@@ -24,6 +24,8 @@ Options
                      numbers age, and a stale receipt is quietly becoming a leak
   --max-raw <n>      compile only: fail when the report uses more than n {{raw:}}
                      escapes — the escape hatch must stay boundable
+  --strict           compile only: promote warnings (worded-number) to errors.
+                     info (unused-metric) is a drift signal and never promotes
   --format <html|md> output format (default: html). md is grounded markdown with a
                      receipts appendix — pastes into Notion, PR bodies or Slack intact
   --out <file>       where to write the output (default: report.html / report.grounded.md)
@@ -53,6 +55,7 @@ function parseArgs(argv: string[]) {
   let format: Format = 'html'
   let maxAgeDays: number | undefined
   let maxRaw: number | undefined
+  let strict = false
   let help = false
   let version = false
 
@@ -71,6 +74,7 @@ function parseArgs(argv: string[]) {
         process.exit(2)
       }
     }
+    else if (arg === '--strict') strict = true
     else if (arg === '--max-raw') {
       maxRaw = Number(args[++i])
       if (!Number.isFinite(maxRaw) || maxRaw < 0) {
@@ -89,7 +93,7 @@ function parseArgs(argv: string[]) {
   }
   const command = ['refresh', 'init', 'verify'].includes(positional[0]) ? positional[0] : 'compile'
   if (command !== 'compile') positional.shift()
-  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays, maxRaw }
+  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays, maxRaw, strict }
 }
 
 async function exists(path: string) {
@@ -220,7 +224,7 @@ async function main() {
     process.exit(r.errors.length > 0 ? 1 : 0)
   }
 
-  const result = await compile(reportPath, irPath, { format: opts.format, maxAgeDays: opts.maxAgeDays, maxRaw: opts.maxRaw })
+  const result = await compile(reportPath, irPath, { format: opts.format, maxAgeDays: opts.maxAgeDays, maxRaw: opts.maxRaw, strict: opts.strict })
   const defaultName = opts.format === 'md' ? 'report.grounded.md' : 'report.html'
   const outPath = resolve(opts.out ?? join(reportPath, '..', defaultName))
 
@@ -230,10 +234,18 @@ async function main() {
     const rawNote = result.grounded.raw > 0 ? ` · ${result.grounded.raw} raw escape(s)` : ''
     console.log(`\nwatertight v${pkg.version} · ${result.grounded.metrics} grounded metrics · ${result.grounded.claims} claims · ${result.grounded.identifiers} identifiers${rawNote}`)
     if (result.leaks.length > 0) {
-      console.log(`\n${result.leaks.length} leak(s) — the report does not hold water:\n`)
+      const count = (sev: string) => result.leaks.filter((l) => l.severity === sev).length
+      const errors = count('error')
+      const parts = [
+        errors > 0 && `${errors} error(s)`,
+        count('warn') > 0 && `${count('warn')} warning(s)`,
+        count('info') > 0 && `${count('info')} info`,
+      ].filter(Boolean)
+      console.log(`\n${parts.join(', ')}${errors > 0 ? ' — the report does not hold water' : ''}:\n`)
+      const ICON = { error: '✗', warn: '⚠', info: 'ℹ' } as const
       for (const leak of result.leaks) {
         const where = leak.line !== undefined ? `${basename(reportPath)}:${leak.line} — ` : ''
-        console.log(`  ✗ [${leak.rule}] ${where}${leak.message}`)
+        console.log(`  ${ICON[leak.severity]} [${leak.rule}] ${where}${leak.message}`)
         if (leak.detail) console.log(`    ${leak.detail}`)
       }
       console.log()
@@ -247,7 +259,8 @@ async function main() {
     console.log('holds water (check only — nothing written)\n')
   }
 
-  process.exit(result.leaks.length > 0 ? 1 : 0)
+  // warn and info report without blocking; only an error (or a promoted warn) fails
+  process.exit(result.leaks.some((l) => l.severity === 'error') ? 1 : 0)
 }
 
 main().catch((err) => {

@@ -1,4 +1,4 @@
-export type Severity = 'error' | 'warn'
+export type Severity = 'error' | 'warn' | 'info'
 
 /** A leak is a claim that cannot hold water — the report fails to build while any exist. */
 export interface Leak {
@@ -41,8 +41,21 @@ export interface Metric {
   derived?: Derived
 }
 
+/**
+ * A machine-judged comparison — the arithmetic half of a conclusion ("under target",
+ * "no cannibalisation"). Operands are metric keys, range accessors (key.lo / key.hi),
+ * or inline numbers. A false assertion fails the build: when refresh moves a number
+ * far enough to flip the conclusion, the report stops compiling until it is rewritten.
+ */
+export interface Assertion {
+  op: 'lt' | 'lte' | 'gt' | 'gte'
+  a: number | string
+  b: number | string
+}
+
 export interface Ir {
   /** Numbers that are names, not measurements — versions, flags, unit ids */
   identifiers: Record<string, string>
   metrics: Record<string, Metric>
+  assertions: Record<string, Assertion>
 }

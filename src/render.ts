@@ -1,5 +1,19 @@
 import type { Ir, Metric } from './types.js'
 
+/** How much a reader should trust the number: measured from a source, recomputed, or assumed. */
+export function metricKind(m: Metric): 'measured' | 'derived' | 'assumption' {
+  if (m.derived) return 'derived'
+  if (m.source?.type === 'hypothesis') return 'assumption'
+  return 'measured'
+}
+
+const URL_RE = /https?:\/\/[^\s<>"')]+/g
+
+/** Conservative autolinks for markdown receipts — scheme-prefixed URLs only. */
+export function linkifyMd(text: string): string {
+  return text.replace(URL_RE, (url) => `<${url}>`)
+}
+
 /**
  * Code shows syntax, it does not state facts — a fenced example of {{m:…}} must render
  * verbatim, not substitute. Stash code regions before substitution, restore after.
@@ -62,17 +76,29 @@ function markdown(src: string): string {
 }
 
 export function render(report: string, ir: Ir): string {
+  const used: string[] = []
+  const keysUsed = (k: string) => {
+    if (ir.metrics[k] && !used.includes(k)) used.push(k)
+  }
   const { text: protectedReport, restore } = protectCode(escapeHtml(report))
   const grounded = restore(protectedReport
     .replace(/\{\{m:([\w-]+)\}\}/g, (_, key) => {
+      if (!used.includes(key)) used.push(key)
       const m = ir.metrics[key]
-      return `<b class="w" title="${escapeHtml(receipt(m))}">${formatValue(m)}<sup>†</sup></b>`
+      const assumption = metricKind(m) === 'assumption'
+      // an assumption is a different grade of receipt — the reader sees it without hovering
+      return `<b class="w${assumption ? ' a' : ''}" title="${escapeHtml(receipt(m))}">${formatValue(m)}<sup>${assumption ? '†ᵃ' : '†'}</sup></b>`
     })
     .replace(/\{\{id:([\w-]+)\}\}/g, (_, key) => `<code>${escapeHtml(ir.identifiers[key])}</code>`)
     .replace(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g, (_, text, evidence) => {
       const keys = evidence.split(',').map((k: string) => k.trim()).filter(Boolean)
       const receipts = keys
-        .map((k: string) => `${k} = ${formatValue(ir.metrics[k])} (${receipt(ir.metrics[k])})`)
+        .map((k: string) => {
+          const a = ir.assertions[k]
+          if (a) return `${k} = assertion (${a.a} ${a.op} ${a.b} — holds)`
+          keysUsed(k)
+          return `${k} = ${formatValue(ir.metrics[k])} (${receipt(ir.metrics[k])})`
+        })
         .join(' | ')
       return `<span class="c" title="${escapeHtml(receipts)}">${text.trim()}<sup>‡</sup></span>`
     })
@@ -84,10 +110,23 @@ export function render(report: string, ir: Ir): string {
   @media(prefers-color-scheme:dark){body{background:#111;color:#ddd}code{background:#222}}
   h1,h2,h3{line-height:1.3}
   .w{border-bottom:2px solid #4a9;cursor:help;font-weight:600}
+  .w.a{border-bottom-style:dotted}
   .c{border-bottom:2px dotted #4a9;cursor:help}
   code{background:#eee;padding:1px 5px;border-radius:4px;font-size:.9em}
   sup{font-size:.65em;color:#4a9}
 </style>
 <body>${markdown(grounded)}
-<hr><p style="color:#888;font-size:.85em">Compiled by watertight — every underlined figure carries its receipt (hover to see it).</p>`
+<hr><h3>Receipts (${used.length} metrics)</h3>
+<ol style="font-size:.9em">
+${used
+  .map((key) => {
+    const m = ir.metrics[key]
+    const kind = metricKind(m)
+    const tag = kind === 'assumption' ? ' <em>(assumption — not measured)</em>' : ''
+    const line = escapeHtml(receipt(m)).replace(/https?:\/\/[^\s<>"')]+/g, (url) => `<a href="${url}">${url}</a>`)
+    return `<li><b>${escapeHtml(key)}</b> = ${formatValue(m)}${tag}<br><span style="color:#888">${line}</span></li>`
+  })
+  .join('\n')}
+</ol>
+<p style="color:#888;font-size:.85em">Compiled by watertight — every underlined figure carries its receipt (hover to see it).</p>`
 }

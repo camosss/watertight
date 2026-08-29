@@ -186,7 +186,7 @@ test('pct_change endpoints may be metric keys, and an unknown key is a leak', as
   const bad = await compileCase('Change: {{m:d}}.', {
     metrics: { ...base, d: { value: 0.5, unit: 'ratio-point', definition: 'x', derived: { op: 'pct_change', before: 'a', after: 'nope' } } },
   })
-  assert.deepEqual(bad.leaks.map((l) => l.rule), ['bad-derived'])
+  assert.deepEqual(bad.leaks.filter((l) => l.severity === 'error').map((l) => l.rule), ['bad-derived'])
 })
 
 test('a leak carries the line it lives on, even after stripping', async () => {
@@ -379,4 +379,101 @@ test('Korean counter units are measurements in an identifier; 초 stays a name',
     identifiers: { rev: '1428원', cnt: '72건', timeout: '30초' },
   })
   assert.equal(leaks.filter((l) => l.rule === 'identifier-measurement').length, 2)
+})
+
+test('a warning reports without blocking; --strict promotes it; info never promotes', async () => {
+  const report = '거의 세 배 늘었다. Count {{m:x}}.'
+  const ir = { metrics: { x: MEASURED, spare: { ...MEASURED, value: 1 } } }
+
+  const lax = await compileCase(report, ir)
+  const severities = lax.leaks.map((l) => `${l.severity}:${l.rule}`).sort()
+  assert.deepEqual(severities, ['info:unused-metric', 'warn:worded-number'])
+  assert.ok(lax.output, 'warn/info must not suppress the output')
+
+  const dir = await mkdtemp(join(tmpdir(), 'wt-strict-'))
+  await writeFile(join(dir, 'report.md'), report)
+  await writeFile(join(dir, 'metrics.json'), JSON.stringify(ir))
+  const strict = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'), { strict: true })
+  assert.equal(strict.leaks.some((l) => l.rule === 'worded-number' && l.severity === 'error'), true)
+  assert.equal(strict.leaks.some((l) => l.rule === 'unused-metric' && l.severity === 'info'), true)
+  assert.equal(strict.output, undefined)
+})
+
+test('worded quantities warn; compound words never do', async () => {
+  const hit = await compileCase('세 배 가까이 늘어 절반 이상이 됐고, 수십만 건과 a million 규모다. {{m:x}}', { metrics: { x: MEASURED } })
+  assert.equal(hit.leaks.filter((l) => l.rule === 'worded-number').length, 4)
+
+  const miss = await compileCase('배송이 지연되어 건물 번호를 재배포했다. {{m:x}}', { metrics: { x: MEASURED } })
+  assert.equal(miss.leaks.filter((l) => l.rule === 'worded-number').length, 0)
+})
+
+test('assertions judge the arithmetic half of a conclusion', async () => {
+  const irFor = (total: number) => ({
+    metrics: {
+      total: { ...MEASURED, value: total },
+      target: { value: [30000, 140000], unit: '원', source: { type: 'hypothesis' }, window: 'plan', fetched_at: '-' },
+    },
+    assertions: { under_target: { op: 'lt', a: 'total', b: 'target.lo' } },
+  })
+  const report = 'Total {{m:total}} vs {{m:target}}. {{claim: 미달 | evidence: under_target}}'
+
+  const ok = await compileCase(report, irFor(1428))
+  assert.equal(ok.leaks.filter((l) => l.severity === 'error').length, 0)
+
+  const flipped = await compileCase(report, irFor(45200))
+  assert.deepEqual(flipped.leaks.filter((l) => l.severity === 'error').map((l) => l.rule), ['assertion-failed'])
+})
+
+test('malformed assertions are leaks, never crashes', async () => {
+  const base = { metrics: { total: { ...MEASURED, value: 1428 }, target: { value: [1, 2], unit: 'x', source: { type: 'hypothesis' }, window: 'w', fetched_at: '-' } } }
+  const cases: [object, string][] = [
+    [{ under: { op: 'lt' } }, 'bad-assertion'],                                  // operands missing
+    [{ under: { op: 'between', a: 1, b: 2 } }, 'bad-assertion'],                 // unknown op
+    [{ under: { op: 'lt', a: 'total', b: 'target' } }, 'bad-assertion'],         // range without accessor
+    [{ under: { op: 'lt', a: 'ghost', b: 1 } }, 'bad-assertion'],                // unknown key
+    [{ total: { op: 'lt', a: 1, b: 2 } }, 'duplicate-key'],                      // namespace collision
+  ]
+  for (const [assertions, rule] of cases) {
+    const { leaks } = await compileCase('T {{m:total}} {{m:target}}.', { ...base, assertions })
+    assert.equal(leaks.some((l) => l.rule === rule), true, JSON.stringify(assertions))
+  }
+})
+
+test('an assumption reads differently from a measurement, in both renders', async () => {
+  const ir = {
+    metrics: {
+      real: { ...MEASURED, value: 5, source: { type: 'sql', query: 'https://mixpanel.com/p/1' } },
+      plan: { ...MEASURED, value: 9, source: { type: 'hypothesis' } },
+    },
+  }
+  const md = await compileCase('Real {{m:real}}, plan {{m:plan}}.', ir, 'md')
+  assert.match(md.output ?? '', /⁽²ᵃ⁾/)
+  assert.match(md.output ?? '', /\*\(assumption — not measured\)\*/)
+  // receipts autolink conservative scheme-prefixed URLs
+  assert.ok(md.output?.includes('<https://mixpanel.com/p/1>'))
+
+  const html = await compileCase('Real {{m:real}}, plan {{m:plan}}.', ir)
+  assert.ok(html.output?.includes('class="w a"'))
+  assert.ok(html.output?.includes('<a href="https://mixpanel.com/p/1">'))
+})
+
+test('html receipt links escape hostile URLs', async () => {
+  const { output } = await compileCase('V {{m:x}}.', {
+    metrics: { x: { ...MEASURED, source: { type: 'web', url: 'https://x.com/"><script>alert(1)</script>' } } },
+  })
+  assert.ok(!output?.includes('<script>'))
+})
+
+test('unused-metric is info: reported, never failing, exempt when feeding a derived', async () => {
+  const { leaks, output } = await compileCase('Only {{m:total}}.', {
+    metrics: {
+      a: { ...MEASURED, value: 1 },
+      total: { value: 1, unit: 'count', derived: { op: 'sum', of: ['a'] } },
+      orphan: { ...MEASURED, value: 9 },
+    },
+  })
+  const unused = leaks.filter((l) => l.rule === 'unused-metric')
+  assert.deepEqual(unused.map((l) => l.severity), ['info'])
+  assert.match(unused[0].message, /"orphan"/)
+  assert.ok(output)
 })

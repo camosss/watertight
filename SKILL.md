@@ -65,7 +65,17 @@ number yet.
 - `ratio` / `ratio-point` metrics require a `definition`. Ratios above 1.0
   are legal but the definition must explain the basis.
 - A hypothesis or plan figure is still a metric — source it as
-  `{ "type": "hypothesis", ... }` pointing at the planning doc.
+  `{ "type": "hypothesis", ... }` pointing at the planning doc. It renders
+  visibly as an assumption, not a measurement.
+- When a conclusion is a comparison ("under target"), state it as an
+  assertion and cite it as evidence — the compiler judges it every build:
+
+  ```json
+  "assertions": { "under_target": { "op": "lt", "a": "revenue_total", "b": "revenue_target.lo" } }
+  ```
+
+  Ops: lt, lte, gt, gte. Range metrics are referenced with an explicit
+  `.lo` / `.hi` accessor — never bare.
 
 **3. Write the narrative (`report.md`).**
 Never type a figure into prose. Reference it:
@@ -87,6 +97,9 @@ watertight . --check --max-age 30           # also fail receipts older than 30 d
 ```
 
 Every leak names its line (`report.md:31`), so fix them where they live.
+A `worded-number` warning ("세 배", "half of") means a quantity is written in
+words: if it has a basis, restate it as a metric or derived; if it is
+rhetoric, mark it `{{raw:…}}`. Run with `--strict` to treat these as errors.
 Fix leaks by *going and getting the receipt* — running the query, opening
 the export — never by deleting the number, weakening the claim, or wrapping
 a measurement in `{{raw:}}` to silence the checker. A `derived-mismatch` is

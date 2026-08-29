@@ -15,8 +15,9 @@ export const blankCode = (report: string): string =>
  * tool exists to catch: a typed, transcribed, or hallucinated figure reads exactly like
  * a real one, so none are allowed outside a reference.
  */
-export function scanNakedNumbers(report: string): Leak[] {
-  const stripped = report
+/** The prose that remains once every non-statement region is blanked in place. */
+function strippedProse(report: string): string {
+  return report
     .replace(/\{\{(m|id):[\w-]+\}\}/g, blank)
     // a claim's prose stays scanned — only its syntax is blanked, so a number
     // smuggled into claim text is still a leak, at its true position
@@ -33,7 +34,10 @@ export function scanNakedNumbers(report: string): Leak[] {
     .replace(/(?<![A-Za-z0-9가-힣])[A-Za-z]+\d[\w.\-]*/g, blank) // Q3, v6.109.0, iOS15 — names, not measurements
     .replace(/^#{1,6}(?= )/gm, blank)          // heading markers only — heading TEXT is scanned, people summarise numbers there
     .replace(/^\s*\d+\.\s/gm, blank)           // ordered-list markers
+}
 
+export function scanNakedNumbers(report: string): Leak[] {
+  const stripped = strippedProse(report)
   const leaks: Leak[] = []
   for (const m of stripped.matchAll(/\d[\d,.]*\s*(%p?|[가-힣]{1,2})?/g)) {
     const token = m[0].trim().replace(/[.,]+$/, '')
@@ -50,7 +54,12 @@ export function scanNakedNumbers(report: string): Leak[] {
 }
 
 /** Every reference in the narrative must resolve; a dangling one is authoring drift. */
-export function scanRefs(rawReport: string, metricKeys: Set<string>, idKeys: Set<string>): Leak[] {
+export function scanRefs(
+  rawReport: string,
+  metricKeys: Set<string>,
+  idKeys: Set<string>,
+  assertionKeys: Set<string> = new Set(),
+): Leak[] {
   const leaks: Leak[] = []
   const report = blankCode(rawReport)
   for (const m of report.matchAll(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g)) {
@@ -67,7 +76,7 @@ export function scanRefs(rawReport: string, metricKeys: Set<string>, idKeys: Set
       })
     }
     for (const key of keys) {
-      if (!metricKeys.has(key)) {
+      if (!metricKeys.has(key) && !assertionKeys.has(key)) {
         leaks.push({ severity: 'error', rule: 'unknown-ref', line, message: `claim "${text.trim()}" cites unknown metric "${key}"` })
       }
     }
@@ -116,4 +125,28 @@ export function scanMarkers(rawReport: string): Leak[] {
     })
   }
   return leaks
+}
+
+// Narrow on purpose: a false worded-number on 배송 or 건물 costs more trust than a
+// missed 수사 표현. Longest alternatives first; boundaries block compound words.
+const WORDED_KO_COUNTED = /(?<![가-힣])(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|몇)\s?(배|건|명|번|곳|개)(?![가-힣])/g
+const WORDED_KO_STANDALONE = /(?<![가-힣])(절반|과반|대다수|수십만|수백만|수천만|수억|수십|수백|수천|수만)(\s?(배|건|명|번|곳|개|원|회))?(?![가-힣])/g
+const WORDED_EN = /\b(doubled?|tripled?|halved|half of|a million|millions of|thousands of|dozens of)\b/gi
+
+/** Quantities written in words — the digit scanner cannot see them, but a reader does. */
+export function scanWordedNumbers(report: string): Leak[] {
+  const stripped = strippedProse(report)
+  const leaks: Leak[] = []
+  for (const re of [WORDED_KO_COUNTED, WORDED_KO_STANDALONE, WORDED_EN]) {
+    for (const m of stripped.matchAll(re)) {
+      leaks.push({
+        severity: 'warn',
+        rule: 'worded-number',
+        line: lineAt(stripped, m.index),
+        message: `"${m[0].trim()}" is a quantity in words — no receipt can bind to it`,
+        detail: 'If it has a basis, state it as {{m:…}} or a derived metric; if it is rhetoric, mark it {{raw:…}}.',
+      })
+    }
+  }
+  return leaks.sort((x, y) => (x.line ?? 0) - (y.line ?? 0))
 }

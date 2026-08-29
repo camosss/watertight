@@ -128,3 +128,23 @@ test('verify catches a tampered derived even when no source moved', async () => 
   assert.equal(r.status, 1)
   assert.match(r.stdout, /derived-mismatch/)
 })
+
+test('warn-only compile writes the file and exits 0; --strict flips both', async () => {
+  const { mkdtemp, writeFile, access } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const dir = await mkdtemp(join(tmpdir(), 'wt-warnex-'))
+  await writeFile(join(dir, 'report.md'), '세 배 늘었다. {{m:x}}')
+  await writeFile(join(dir, 'metrics.json'), JSON.stringify({
+    metrics: { x: { value: 1, unit: 'count', window: 'w', fetched_at: '2026-01-01', source: { type: 't' } } },
+  }))
+
+  const lax = cli(dir)
+  assert.equal(lax.status, 0)
+  assert.match(lax.stdout, /1 warning\(s\)/)
+  assert.match(lax.stdout, /worded-number/)
+  await access(join(dir, 'report.html'))
+
+  const strict = cli(dir, '--strict', '--out', join(dir, 'strict.html'))
+  assert.equal(strict.status, 1)
+  await assert.rejects(access(join(dir, 'strict.html')))
+})

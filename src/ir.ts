@@ -1,4 +1,4 @@
-import type { Ir, Leak, Metric } from './types.js'
+import type { Assertion, Ir, Leak, Metric } from './types.js'
 
 /** Units whose meaning depends on how they were aggregated — a bare value misleads. */
 const DEFINITION_REQUIRED = new Set(['ratio', 'ratio-point'])
@@ -180,5 +180,61 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
     }
   }
 
-  return { ir: { identifiers, metrics }, leaks }
+  // assertions: the comparisons conclusions rest on, judged on every compile.
+  // Malformed input is a leak, never a crash — the derived.of lesson applies here too.
+  const OPS = { lt: (a: number, b: number) => a < b, lte: (a: number, b: number) => a <= b, gt: (a: number, b: number) => a > b, gte: (a: number, b: number) => a >= b } as const
+  const assertions: Record<string, Assertion> = {}
+  for (const [key, raw] of Object.entries((root['assertions'] as object) ?? {})) {
+    if (metrics[key]) {
+      leaks.push({ severity: 'error', rule: 'duplicate-key', message: `"${key}" is both a metric and an assertion — one namespace, one meaning` })
+      continue
+    }
+    const a = raw as Partial<Assertion> | null
+    if (!a || typeof a !== 'object' || typeof a.op !== 'string' || a.a === undefined || a.b === undefined) {
+      leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}" needs op, a and b` })
+      continue
+    }
+    if (!(a.op in OPS)) {
+      leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}" has unknown op "${a.op}" — supported: lt, lte, gt, gte` })
+      continue
+    }
+    const operand = (v: number | string, side: string): number | undefined => {
+      if (typeof v === 'number' && Number.isFinite(v)) return v
+      if (typeof v !== 'string') return undefined
+      const accessor = /^([\w-]+)\.(lo|hi)$/.exec(v)
+      if (accessor) {
+        const m = metrics[accessor[1]]
+        if (!m || !Array.isArray(m.value)) {
+          leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}": ${side} "${v}" needs "${accessor[1]}" to be a range metric` })
+          return undefined
+        }
+        return accessor[2] === 'lo' ? m.value[0] : m.value[1]
+      }
+      const m = metrics[v]
+      if (!m) {
+        leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}": ${side} "${v}" is not a metric` })
+        return undefined
+      }
+      if (Array.isArray(m.value)) {
+        // no magic default — the author says which end of the range they mean
+        leaks.push({ severity: 'error', rule: 'bad-assertion', message: `assertion "${key}": "${v}" is a range — say ${v}.lo or ${v}.hi` })
+        return undefined
+      }
+      return m.value
+    }
+    const left = operand(a.a, 'a')
+    const right = operand(a.b, 'b')
+    if (left === undefined || right === undefined) continue
+    assertions[key] = a as Assertion
+    if (!OPS[a.op as keyof typeof OPS](left, right)) {
+      leaks.push({
+        severity: 'error',
+        rule: 'assertion-failed',
+        message: `assertion "${key}" does not hold: ${left.toLocaleString()} ${a.op} ${right.toLocaleString()} is false`,
+        detail: 'The numbers no longer support this conclusion — rewrite it, or fix the inputs.',
+      })
+    }
+  }
+
+  return { ir: { identifiers, metrics, assertions }, leaks }
 }

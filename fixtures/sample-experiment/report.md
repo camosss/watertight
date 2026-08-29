@@ -11,7 +11,7 @@ hypothesised range of {{m:revenue_target}}.
 Fill rate held at {{m:fill_rate}}. Note the basis in its receipt: the vendor counts
 responses, not requests, so values above {{raw:one hundred percent}} are possible.
 
-{{claim: The new flow outperforms control | evidence: cvr_lift, revenue_delta}} —
+{{claim: The new flow outperforms control | evidence: cvr_lift, met_target}} —
 though the revenue effect sits at the low end of the hypothesis.
 
 - Latency was unaffected (see dashboard, not measured here)

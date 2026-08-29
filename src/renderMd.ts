@@ -1,4 +1,4 @@
-import { formatValue, protectCode, receipt } from './render.js'
+import { formatValue, linkifyMd, metricKind, protectCode, receipt } from './render.js'
 import type { Ir } from './types.js'
 
 const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹'
@@ -17,7 +17,10 @@ export function renderMarkdown(report: string, ir: Ir): string {
   const body = restore(protectedReport
     .replace(/\{\{m:([\w-]+)\}\}/g, (_, key) => {
       if (!used.includes(key)) used.push(key)
-      return `**${formatValue(ir.metrics[key])}** ${sup(used.indexOf(key) + 1)}`
+      const m = ir.metrics[key]
+      const marker = sup(used.indexOf(key) + 1)
+      // an assumption reads differently at a glance: ⁽³ᵃ⁾, and the appendix says why
+      return `**${formatValue(m)}** ${metricKind(m) === 'assumption' ? marker.replace('⁾', 'ᵃ⁾') : marker}`
     })
     .replace(/\{\{id:([\w-]+)\}\}/g, (_, key) => `\`${ir.identifiers[key]}\``)
     .replace(
@@ -47,7 +50,8 @@ export function renderMarkdown(report: string, ir: Ir): string {
     .map((key, i) => {
       const m = ir.metrics[key]
       const definition = m.definition ? ` — ${m.definition}` : ''
-      return `${i + 1}. **${key}** = ${formatValue(m)}${definition}\n   ${receipt(m, false)}`
+      const tag = metricKind(m) === 'assumption' ? ' *(assumption — not measured)*' : ''
+      return `${i + 1}. **${key}** = ${formatValue(m)}${definition}${tag}\n   ${linkifyMd(receipt(m, false))}`
     })
     .join('\n')
 

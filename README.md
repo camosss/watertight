@@ -98,6 +98,20 @@ do, so hand-computed values don't have to masquerade as measured ones:
 }
 ```
 
+An **assertion** is the arithmetic half of a conclusion — "under target",
+"no cannibalisation" — judged on every compile. When `refresh` moves a number
+far enough to flip it, the build breaks until the conclusion is rewritten:
+
+```json
+"assertions": {
+  "met_target": { "op": "gte", "a": "revenue_total", "b": "revenue_target.lo" }
+}
+```
+
+Ops: `lt`, `lte`, `gt`, `gte`. Operands are metric keys, inline numbers, or —
+for range metrics, always explicitly — `key.lo` / `key.hi`. Claims can cite
+assertion keys as evidence.
+
 A **range** states a hypothesis honestly — plans are receipts too:
 
 ```json
@@ -119,7 +133,7 @@ Conversion moved from {{m:conversion_before}} to {{m:conversion_after}},
 a lift of {{m:lift}}. Revenue impact was {{m:revenue_total}}, within the
 hypothesised {{m:revenue_target}}.
 
-{{claim: the experiment met its success criteria | evidence: lift, revenue_total}}
+{{claim: the experiment met its success criteria | evidence: lift, met_target}}
 
 Support runs {{raw:24/7}}.
 ```
@@ -135,6 +149,7 @@ watertight report.md metrics.json    # → report.html (self-contained, hover fo
 watertight . --format md             # → grounded markdown (below)
 watertight . --check                 # verify only, write nothing (CI)
 watertight . --check --max-age 30    # also fail receipts older than 30 days
+watertight . --strict                # promote warnings (worded-number) to errors
 watertight . --json                  # machine-readable result
 ```
 
@@ -182,6 +197,13 @@ figure shows its receipt.
 | `stale-metric` | with `--max-age <days>`: a receipt whose `fetched_at` is older than the budget — numbers age |
 | `identifier-measurement` | an identifier whose value is shaped like a measurement (`"47%"`, `"1,428"`) — a number smuggled past the receipt requirement through the id door |
 | `raw-budget` | with `--max-raw <n>`: more `{{raw:}}` escapes than the budget — the escape hatch stays boundable |
+| `worded-number` | *(warn)* a quantity written in words — "세 배", "절반", "a million" — that no receipt can bind to; `--strict` makes it fail |
+| `assertion-failed` | an `assertions` comparison that is false — the numbers no longer support the conclusion |
+| `bad-assertion` / `duplicate-key` | a malformed assertion (unknown op, missing operand, range without `.lo`/`.hi`), or a key that is both metric and assertion |
+| `unused-metric` | *(info)* a metric nothing references — drift signal, never fails, never promoted |
+
+Severities: **error** fails the build and suppresses output; **warn** and **info**
+are reported while the output still renders and the exit code stays 0.
 
 <br>
 
