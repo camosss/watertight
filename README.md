@@ -22,7 +22,7 @@ An ungrounded number is a **leak**. A report with zero leaks **holds water**:
 ```
 2 leak(s) — the report does not hold water:
 
-  ✗ [naked-number] "15%" appears in the narrative without a receipt
+  ✗ [naked-number] report.md:31 — "15%" appears in the narrative without a receipt
   ✗ [derived-mismatch] metric "revenue_total" is 1440, but its parts sum to 1428
 ```
 
@@ -128,6 +128,7 @@ Compile:
 watertight report.md metrics.json    # → report.html (self-contained, hover for receipts)
 watertight . --format md             # → grounded markdown (below)
 watertight . --check                 # verify only, write nothing (CI)
+watertight . --check --max-age 30    # also fail receipts older than 30 days
 watertight . --json                  # machine-readable result
 ```
 
@@ -171,6 +172,7 @@ figure shows its receipt.
 | `claim-without-evidence` | a `{{claim:}}` with no `evidence:` keys, or keys that don't exist |
 | `bad-derived` | derived ops referencing missing or non-numeric inputs |
 | `empty-ir` | a report "grounded" in nothing |
+| `stale-metric` | with `--max-age <days>`: a receipt whose `fetched_at` is older than the budget — numbers age |
 
 <br>
 

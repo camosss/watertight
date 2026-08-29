@@ -2,6 +2,7 @@
 import { access, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { compile, type Format } from './compile.js'
+import { basename } from 'node:path'
 import { refresh, type Fetcher } from './refresh.js'
 import { pathToFileURL } from 'node:url'
 
@@ -14,6 +15,8 @@ Usage
   watertight refresh <dir>     re-fetch metric values from their sources, update metrics.json
 
 Options
+  --max-age <days>   compile only: fail any metric whose fetched_at is older —
+                     numbers age, and a stale receipt is quietly becoming a leak
   --format <html|md> output format (default: html). md is grounded markdown with a
                      receipts appendix — pastes into Notion, PR bodies or Slack intact
   --out <file>       where to write the output (default: report.html / report.grounded.md)
@@ -41,6 +44,7 @@ function parseArgs(argv: string[]) {
   let allowCommands = false
   let fetchersPath: string | undefined
   let format: Format = 'html'
+  let maxAgeDays: number | undefined
   let help = false
   let version = false
 
@@ -52,6 +56,13 @@ function parseArgs(argv: string[]) {
     else if (arg === '--allow-commands') allowCommands = true
     else if (arg === '--fetchers') fetchersPath = args[++i]
     else if (arg === '--format') format = args[++i] === 'md' ? 'md' : 'html'
+    else if (arg === '--max-age') {
+      maxAgeDays = Number(args[++i])
+      if (!Number.isFinite(maxAgeDays) || maxAgeDays < 0) {
+        console.error(`error: --max-age needs a number of days, got "${args[i]}"`)
+        process.exit(2)
+      }
+    }
     else if (arg === '--json') json = true
     else if (arg === '-h' || arg === '--help') help = true
     else if (arg === '-v' || arg === '--version') version = true
@@ -59,7 +70,7 @@ function parseArgs(argv: string[]) {
   }
   const command = positional[0] === 'refresh' ? 'refresh' : 'compile'
   if (command === 'refresh') positional.shift()
-  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath }
+  return { command, positional, out, check, json, help, version, dryRun, allowCommands, format, fetchersPath, maxAgeDays }
 }
 
 async function exists(path: string) {
@@ -128,7 +139,7 @@ async function main() {
     process.exit(r.errors.length > 0 ? 1 : 0)
   }
 
-  const result = await compile(reportPath, irPath, opts.format)
+  const result = await compile(reportPath, irPath, { format: opts.format, maxAgeDays: opts.maxAgeDays })
   const defaultName = opts.format === 'md' ? 'report.grounded.md' : 'report.html'
   const outPath = resolve(opts.out ?? join(reportPath, '..', defaultName))
 
@@ -139,7 +150,8 @@ async function main() {
     if (result.leaks.length > 0) {
       console.log(`\n${result.leaks.length} leak(s) — the report does not hold water:\n`)
       for (const leak of result.leaks) {
-        console.log(`  ✗ [${leak.rule}] ${leak.message}`)
+        const where = leak.line !== undefined ? `${basename(reportPath)}:${leak.line} — ` : ''
+        console.log(`  ✗ [${leak.rule}] ${where}${leak.message}`)
         if (leak.detail) console.log(`    ${leak.detail}`)
       }
       console.log()

@@ -77,8 +77,10 @@ Never type a figure into prose. Reference it:
 watertight report.md metrics.json          # writes report.html
 watertight . --format md                    # grounded markdown (Notion / PR / Slack)
 watertight . --check                        # CI mode: verify, write nothing
+watertight . --check --max-age 30           # also fail receipts older than 30 days
 ```
 
+Every leak names its line (`report.md:31`), so fix them where they live.
 Fix leaks by *going and getting the receipt* — running the query, opening
 the export — never by deleting the number, weakening the claim, or wrapping
 a measurement in `{{raw:}}` to silence the checker. A `derived-mismatch` is

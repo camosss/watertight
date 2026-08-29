@@ -5,6 +5,8 @@ export interface Leak {
   severity: Severity
   /** Stable rule id, e.g. "naked-number" */
   rule: string
+  /** 1-indexed line in the narrative, when the leak has a location there */
+  line?: number
   message: string
   /** Why it matters, or how to fix it */
   detail?: string

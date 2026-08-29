@@ -182,3 +182,42 @@ test('pct_change endpoints may be metric keys, and an unknown key is a leak', as
   })
   assert.deepEqual(bad.leaks.map((l) => l.rule), ['bad-derived'])
 })
+
+test('a leak carries the line it lives on, even after stripping', async () => {
+  const report = [
+    '# Heading 42',                       // exempt
+    '',
+    'Clean line with {{m:x}}.',
+    'A naked 1440 hides here.',           // line 4
+    '',
+    '{{claim: too big | evidence: nope}}', // line 6
+    '{{m:ghost}} dangles.',                // line 7
+  ].join('\n')
+  const { leaks } = await compileCase(report, { metrics: { x: MEASURED } })
+  const at = Object.fromEntries(leaks.map((l) => [l.rule + (l.message.includes('ghost') ? ':ghost' : ''), l.line]))
+  assert.equal(at['naked-number'], 4)
+  assert.equal(at['unknown-ref'], 6)      // claim citing unknown metric
+  assert.equal(at['unknown-ref:ghost'], 7)
+})
+
+test('max-age fails old receipts, spares fresh ones and dateless hypotheses', async () => {
+  const now = new Date('2026-09-15')
+  const ir = {
+    metrics: {
+      fresh: { ...MEASURED, fetched_at: '2026-09-10' },
+      old: { ...MEASURED, fetched_at: '2026-07-01' },
+      plan: { ...MEASURED, source: { type: 'hypothesis' }, fetched_at: '-' },
+    },
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'wt-'))
+  await writeFile(join(dir, 'report.md'), 'Values: {{m:fresh}} {{m:old}} {{m:plan}}.')
+  await writeFile(join(dir, 'metrics.json'), JSON.stringify(ir))
+
+  const stale = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'), { maxAgeDays: 30, now })
+  assert.deepEqual(stale.leaks.map((l) => l.rule), ['stale-metric'])
+  assert.match(stale.leaks[0].message, /"old".*76 days ago/)
+
+  // without the flag, age is not checked
+  const lax = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'))
+  assert.equal(lax.leaks.length, 0)
+})
