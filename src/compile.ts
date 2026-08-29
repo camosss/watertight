@@ -8,7 +8,7 @@ export interface CompileResult {
   leaks: Leak[]
   /** Present only when the report holds water */
   html?: string
-  grounded: { metrics: number; identifiers: number }
+  grounded: { metrics: number; identifiers: number; claims: number }
 }
 
 export async function compile(reportPath: string, irPath: string): Promise<CompileResult> {
@@ -18,6 +18,7 @@ export async function compile(reportPath: string, irPath: string): Promise<Compi
   const grounded = {
     metrics: [...report.matchAll(/\{\{m:/g)].length,
     identifiers: [...report.matchAll(/\{\{id:/g)].length,
+    claims: [...report.matchAll(/\{\{claim:/g)].length,
   }
 
   leaks.push(...scanNakedNumbers(report))

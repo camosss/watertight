@@ -46,6 +46,13 @@ export function render(report: string, ir: Ir): string {
       return `<b class="w" title="${escapeHtml(receipt(m))}">${formatValue(m)}<sup>†</sup></b>`
     })
     .replace(/\{\{id:([\w-]+)\}\}/g, (_, key) => `<code>${escapeHtml(ir.identifiers[key])}</code>`)
+    .replace(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g, (_, text, evidence) => {
+      const keys = evidence.split(',').map((k: string) => k.trim()).filter(Boolean)
+      const receipts = keys
+        .map((k: string) => `${k} = ${formatValue(ir.metrics[k])} (${receipt(ir.metrics[k])})`)
+        .join(' | ')
+      return `<span class="c" title="${escapeHtml(receipts)}">${text.trim()}<sup>‡</sup></span>`
+    })
     .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => escapeHtml(text))
 
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -54,6 +61,7 @@ export function render(report: string, ir: Ir): string {
   @media(prefers-color-scheme:dark){body{background:#111;color:#ddd}code{background:#222}}
   h1,h2,h3{line-height:1.3}
   .w{border-bottom:2px solid #4a9;cursor:help;font-weight:600}
+  .c{border-bottom:2px dotted #4a9;cursor:help}
   code{background:#eee;padding:1px 5px;border-radius:4px;font-size:.9em}
   sup{font-size:.65em;color:#4a9}
 </style>

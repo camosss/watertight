@@ -113,3 +113,32 @@ test('narrative html is escaped — injection cannot ride a report', async () =>
   assert.equal(leaks.length, 0)
   assert.ok(!html?.includes('<script>'))
 })
+
+test('a claim renders with the receipts of its evidence', async () => {
+  const { leaks, html, grounded } = await compileCase(
+    'Numbers: {{m:x}}. {{claim: it worked | evidence: x}}',
+    { metrics: { x: MEASURED } },
+  )
+  assert.equal(leaks.length, 0)
+  assert.equal(grounded.claims, 1)
+  assert.ok(html?.includes('class="c"'))
+  assert.ok(html?.includes('x = 42 count'))
+})
+
+test('a claim without evidence is a leak, in both spellings', async () => {
+  const bare = await compileCase('{{claim: it worked}}', { metrics: { x: MEASURED } })
+  assert.ok(bare.leaks.some((l) => l.rule === 'claim-without-evidence'))
+
+  const empty = await compileCase('{{claim: it worked | evidence: }}', { metrics: { x: MEASURED } })
+  assert.ok(empty.leaks.some((l) => l.rule === 'claim-without-evidence'))
+})
+
+test('a claim citing an unknown metric is a leak', async () => {
+  const { leaks } = await compileCase('{{claim: fine | evidence: ghost}}', { metrics: { x: MEASURED } })
+  assert.ok(leaks.some((l) => l.rule === 'unknown-ref' && l.message.includes('ghost')))
+})
+
+test('a number smuggled into claim text is still a leak', async () => {
+  const { leaks } = await compileCase('{{claim: lifted 12% | evidence: x}}', { metrics: { x: MEASURED } })
+  assert.ok(leaks.some((l) => l.rule === 'naked-number' && l.message.includes('12%')))
+})
