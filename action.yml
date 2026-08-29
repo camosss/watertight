@@ -1,0 +1,39 @@
+name: watertight
+description: Fail the build when a report contains ungrounded numbers — every figure must carry its receipt.
+branding:
+  icon: droplet
+  color: blue
+inputs:
+  path:
+    description: Directory to search for report.md files (each must sit next to its metrics.json)
+    required: false
+    default: '.'
+  max-age:
+    description: Also fail metrics whose fetched_at is older than this many days
+    required: false
+    default: ''
+  version:
+    description: watertight version to run
+    required: false
+    default: 'latest'
+runs:
+  using: composite
+  steps:
+    - name: Check every report
+      shell: bash
+      run: |
+        set -u
+        max_age=""
+        [ -n "${{ inputs.max-age }}" ] && max_age="--max-age ${{ inputs.max-age }}"
+        reports=$(find "${{ inputs.path }}" -name report.md -not -path '*/node_modules/*')
+        if [ -z "$reports" ]; then
+          echo "::error::no report.md found under ${{ inputs.path }} — nothing checked is not a pass"
+          exit 2
+        fi
+        status=0
+        while IFS= read -r report; do
+          dir=$(dirname "$report")
+          echo "── $dir"
+          npx --yes "watertight@${{ inputs.version }}" "$dir" --check $max_age || status=1
+        done <<< "$reports"
+        exit $status
