@@ -26,6 +26,13 @@ export function renderMarkdown(report: string, ir: Ir): string {
     )
     .replace(/\{\{raw:([^}]*)\}\}/g, (_, text) => text))
 
+  // evidence-only metrics get receipts too — a claim's reader must be able to check its keys
+  for (const [, , evidence] of protectedReport.matchAll(/\{\{claim:([^|}]*)\|\s*evidence:([^}]*)\}\}/g)) {
+    for (const key of evidence.split(',').map((k) => k.trim()).filter(Boolean)) {
+      if (ir.metrics[key] && !used.includes(key)) used.push(key)
+    }
+  }
+
   const appendix = used
     .map((key, i) => {
       const m = ir.metrics[key]

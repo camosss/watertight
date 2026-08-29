@@ -68,7 +68,11 @@ function parseArgs(argv: string[]) {
     else if (arg === '--json') json = true
     else if (arg === '-h' || arg === '--help') help = true
     else if (arg === '-v' || arg === '--version') version = true
-    else if (!arg.startsWith('-')) positional.push(arg)
+    else if (arg.startsWith('-')) {
+      // a strictness tool must not silently ignore a typo'd flag — --chekc writing a file is a betrayal
+      console.error(`error: unknown flag "${arg}" — see --help`)
+      process.exit(2)
+    } else positional.push(arg)
   }
   const command = positional[0] === 'refresh' ? 'refresh' : positional[0] === 'init' ? 'init' : 'compile'
   if (command !== 'compile') positional.shift()

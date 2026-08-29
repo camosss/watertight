@@ -157,3 +157,22 @@ test('a fetcher returning garbage is an error, not a silent write', async () => 
   const written = JSON.parse(await readFile(irPath, 'utf8'))
   assert.equal(written.metrics.x.value, 5)
 })
+
+test('a derived reading another derived settles in one refresh, and broken sums are named', async () => {
+  const { irPath } = await setup(
+    {
+      a: { ...MEASURED, value: 1, source: { type: 'csv', file: 'v.csv', cell: 'A1' } },
+      sub: { value: 1, unit: 'count', derived: { op: 'sum', of: ['a'] } },
+      // declared before its input moves and reads another derived — needs a second pass
+      total: { value: 1, unit: 'count', derived: { op: 'sum', of: ['sub'] } },
+      broken: { value: 9, unit: 'count', derived: { op: 'sum', of: ['nope'] } },
+    },
+    { 'v.csv': '50\n' },
+  )
+  const result = await refresh(irPath, { allowCommands: false, dryRun: false })
+  const written = JSON.parse(await readFile(irPath, 'utf8'))
+  assert.equal(written.metrics.sub.value, 50)
+  assert.equal(written.metrics.total.value, 50)
+  assert.deepEqual(result.errors.map((e) => e.key), ['broken'])
+  assert.match(result.errors[0].message, /not recomputed/)
+})

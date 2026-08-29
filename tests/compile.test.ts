@@ -276,3 +276,28 @@ test('a syntax example inside a code fence is neither substituted nor a dangling
   assert.ok(output?.includes('{{m:ghost}}'))
   assert.ok(output?.includes('{{id:nope}}'))
 })
+
+test('a ratio range converts like a scalar, and ratio-point ranges get %p', async () => {
+  const range = (unit: string) => ({
+    value: [0.3, 0.5], unit, definition: 'd',
+    source: { type: 't' }, window: 'w', fetched_at: '2026-01-01',
+  })
+  const { leaks, output } = await compileCase(
+    'Between {{m:r}} and points {{m:rp}}.',
+    { metrics: { r: range('ratio'), rp: range('ratio-point') } },
+    'md',
+  )
+  assert.equal(leaks.length, 0)
+  assert.ok(output?.includes('30.0~50.0%'))
+  assert.ok(output?.includes('30.0~50.0%p'))
+})
+
+test('evidence-only metrics appear in the receipts appendix', async () => {
+  const { output } = await compileCase(
+    'Body uses {{m:x}}. {{claim: it held | evidence: hidden}}',
+    { metrics: { x: MEASURED, hidden: { ...MEASURED, value: 7 } } },
+    'md',
+  )
+  assert.match(output ?? '', /### Receipts \(2 metrics\)/)
+  assert.match(output ?? '', /\*\*hidden\*\* = 7/)
+})

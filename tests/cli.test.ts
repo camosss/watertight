@@ -56,3 +56,16 @@ test('init scaffolds a pair that holds water, and never overwrites', async () =>
   assert.equal(second.status, 2)
   assert.match(second.stderr, /refusing to overwrite/)
 })
+
+test('an unknown flag is exit 2, and init creates missing directories', async () => {
+  const typo = cli(join(ROOT, 'fixtures', 'sample-experiment'), '--chekc')
+  assert.equal(typo.status, 2)
+  assert.match(typo.stderr, /unknown flag "--chekc"/)
+
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const base = await mkdtemp(join(tmpdir(), 'wt-deep-'))
+  const nested = cli('init', join(base, 'reports', 'new'))
+  assert.equal(nested.status, 0)
+  assert.equal(cli(join(base, 'reports', 'new'), '--check').status, 0)
+})

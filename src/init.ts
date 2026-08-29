@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -68,6 +68,7 @@ export async function init(dir: string): Promise<InitResult> {
   for (const [path] of files) {
     if (existsSync(path)) throw new Error(`refusing to overwrite ${path}`)
   }
+  await mkdir(dir, { recursive: true })
   for (const [path, content] of files) await writeFile(path, content)
   return { written: files.map(([p]) => p) }
 }

@@ -101,7 +101,8 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
   }
   const baseDir = dirname(resolve(irPath))
   const result: RefreshResult = { changes: [], skipped: [], errors: [], wrote: false }
-  const now = new Date().toISOString()
+  // date-only, matching the style people write by hand — receipts should look uniform
+  const now = new Date().toISOString().slice(0, 10)
 
   for (const [key, m] of Object.entries(raw.metrics)) {
     if (m.derived || !m.source || Array.isArray(m.value)) continue
@@ -132,32 +133,59 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
     }
   }
 
-  // inputs may have moved, so derived values are recomputed rather than left to go stale
-  for (const [key, m] of Object.entries(raw.metrics)) {
-    if (!m.derived || Array.isArray(m.value)) continue
-    let computed: number
-    if (m.derived.op === 'sum') {
-      computed = m.derived.of.reduce((acc, ref) => {
-        const part = raw.metrics[ref]
-        return acc + (part && typeof part.value === 'number' ? part.value : NaN)
-      }, 0)
-    } else {
-      const endpoint = (v: number | string): number | undefined => {
-        if (typeof v === 'number') return v
-        const ref = raw.metrics[v]
-        return ref && typeof ref.value === 'number' ? ref.value : undefined
+  // inputs may have moved, so derived values are recomputed rather than left to go stale.
+  // Iterated to a fixpoint so a derived that reads another derived settles too; a derivation
+  // that cannot be recomputed is a named error — silence is impossible here as everywhere.
+  const derivedErrors = new Set<string>()
+  const firstBefore = new Map<string, number>()
+  for (let pass = 0, moved = true; moved && pass < 10; pass++) {
+    moved = false
+    for (const [key, m] of Object.entries(raw.metrics)) {
+      if (!m.derived || Array.isArray(m.value)) continue
+      const fail = (message: string) => {
+        if (!derivedErrors.has(key)) {
+          derivedErrors.add(key)
+          result.errors.push({ key, message })
+        }
       }
-      const before = endpoint(m.derived.before)
-      const after = endpoint(m.derived.after)
-      if (before === undefined || after === undefined || before === 0) continue
-      // keep the author's stated precision — refresh must not turn 0.155 into 0.1551724
-      const decimals = (String(m.value).split('.')[1] ?? '').length
-      computed = Number(((after - before) / before).toFixed(decimals))
+      let computed: number
+      if (m.derived.op === 'sum') {
+        computed = m.derived.of.reduce((acc, ref) => {
+          const part = raw.metrics[ref]
+          return acc + (part && typeof part.value === 'number' ? part.value : NaN)
+        }, 0)
+        if (!Number.isFinite(computed)) {
+          fail('sum references unknown or non-scalar metrics — not recomputed')
+          continue
+        }
+      } else if (m.derived.op === 'pct_change') {
+        const endpoint = (v: number | string): number | undefined => {
+          if (typeof v === 'number') return v
+          const ref = raw.metrics[v]
+          return ref && typeof ref.value === 'number' ? ref.value : undefined
+        }
+        const before = endpoint(m.derived.before)
+        const after = endpoint(m.derived.after)
+        if (before === undefined || after === undefined || before === 0) {
+          fail('pct_change endpoints are unresolvable or zero — not recomputed')
+          continue
+        }
+        // keep the author's stated precision — refresh must not turn 0.155 into 0.1551724
+        const decimals = (String(m.value).split('.')[1] ?? '').length
+        computed = Number(((after - before) / before).toFixed(decimals))
+      } else {
+        fail(`unknown derived op "${(m.derived as { op: string }).op}" — not recomputed`)
+        continue
+      }
+      if (computed !== m.value) {
+        if (!firstBefore.has(key)) firstBefore.set(key, m.value as number)
+        m.value = computed
+        moved = true
+      }
     }
-    if (Number.isFinite(computed) && computed !== m.value) {
-      result.changes.push({ key, before: m.value as number, after: computed })
-      m.value = computed
-    }
+  }
+  for (const [key, before] of firstBefore) {
+    result.changes.push({ key, before, after: raw.metrics[key].value as number })
   }
 
   if (!options.dryRun && (result.changes.length > 0 || result.errors.length === 0)) {

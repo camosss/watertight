@@ -20,9 +20,14 @@ function escapeHtml(s: string) {
 export function formatValue(m: Metric): string {
   if (Array.isArray(m.value)) {
     const [lo, hi] = m.value
-    return `${lo.toLocaleString()}~${hi.toLocaleString()}${m.unit === 'ratio' ? '%' : ` ${m.unit}`}`
+    // a range keeps the same unit conversion as a scalar — [0.3, 0.5] ratio is 30~50%, not 0.3~0.5%
+    if (m.unit === 'ratio' || m.unit === 'ratio-point') {
+      const pct = (v: number) => (v * 100).toFixed(1)
+      return `${pct(lo)}~${pct(hi)}${m.unit === 'ratio' ? '%' : '%p'}`
+    }
+    return `${lo.toLocaleString()}~${hi.toLocaleString()} ${m.unit}`.trim()
   }
-  if (m.unit === 'ratio') return `${(m.value * 100).toFixed(m.value < 0.01 ? 2 : 1)}%`
+  if (m.unit === 'ratio') return `${(m.value * 100).toFixed(Math.abs(m.value) < 0.01 ? 2 : 1)}%`
   if (m.unit === 'ratio-point') return `${m.value >= 0 ? '+' : ''}${(m.value * 100).toFixed(1)}%p`
   return `${m.value.toLocaleString()} ${m.unit}`.trim()
 }
