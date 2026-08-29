@@ -266,6 +266,34 @@ one of the same name.
 
 <br>
 
+## In CI
+
+The repo ships a composite GitHub Action that finds every `report.md` under a
+path and runs `--check` on it — finding nothing is exit 2, not a green build:
+
+```yaml
+on:
+  pull_request:
+  schedule:
+    - cron: '0 9 * * 1'   # numbers age — re-check weekly
+
+jobs:
+  reports-hold-water:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: camosss/watertight@v0
+        with:
+          path: reports/
+          max-age: 30        # optional: fail receipts older than 30 days
+```
+
+`watertight verify` pairs with it when your sources are reachable from CI:
+compile proves the narrative matches the IR, verify proves the IR matches
+reality.
+
+<br>
+
 ## For AI-authored reports
 
 [`SKILL.md`](./SKILL.md) is an authoring contract for coding agents: gather
