@@ -33,8 +33,19 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
   const root = (raw ?? {}) as Record<string, unknown>
 
   const identifiers: Record<string, string> = {}
+  // an identifier names a thing (version, flag, unit id); a value shaped like a
+  // measurement is a number smuggled past the receipt requirement through the id door
+  const MEASUREMENT_SHAPE = /(%p?$)|(^\d{1,3}(,\d{3})+(\.\d+)?$)/
   for (const [k, v] of Object.entries((root['identifiers'] as object) ?? {})) {
     identifiers[k] = String(v)
+    if (MEASUREMENT_SHAPE.test(identifiers[k].trim())) {
+      leaks.push({
+        severity: 'error',
+        rule: 'identifier-measurement',
+        message: `identifier "${k}" is "${identifiers[k]}" — that is a measurement, not a name`,
+        detail: 'Move it to metrics with a source, or it is a number without a receipt.',
+      })
+    }
   }
 
   const metrics = (root['metrics'] as Record<string, Metric>) ?? {}
@@ -77,31 +88,32 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
         leaks.push({ severity: 'error', rule: 'bad-derived', message: `metric "${key}": a range cannot be derived` })
         continue
       }
-      if (m.derived.op === 'sum') {
-        let computed = 0
+      const endpoint = (v: number | string): number | undefined => {
+        if (typeof v === 'number') return v
+        const ref = metrics[v]
+        return ref && typeof ref.value === 'number' ? ref.value : undefined
+      }
+      if (m.derived.op === 'sum' || m.derived.op === 'avg') {
+        let total = 0
         let broken = false
         for (const ref of m.derived.of) {
           const part = metrics[ref]
           if (!part || typeof part.value !== 'number') {
-            leaks.push({ severity: 'error', rule: 'bad-derived', message: `metric "${key}" sums unknown or non-scalar metric "${ref}"` })
+            leaks.push({ severity: 'error', rule: 'bad-derived', message: `metric "${key}" ${m.derived.op}s unknown or non-scalar metric "${ref}"` })
             broken = true
             continue
           }
-          computed += part.value
+          total += part.value
         }
+        const computed = m.derived.op === 'avg' ? total / m.derived.of.length : total
         if (!broken && !roundsTo(m.value, computed)) {
           leaks.push({
             severity: 'error',
             rule: 'derived-mismatch',
-            message: `metric "${key}" is ${m.value}, but its parts sum to ${computed}`,
+            message: `metric "${key}" is ${m.value}, but its parts ${m.derived.op === 'avg' ? 'average' : 'sum'} to ${computed}`,
           })
         }
       } else if (m.derived.op === 'pct_change') {
-        const endpoint = (v: number | string): number | undefined => {
-          if (typeof v === 'number') return v
-          const ref = metrics[v]
-          return ref && typeof ref.value === 'number' ? ref.value : undefined
-        }
         const before = endpoint(m.derived.before)
         const after = endpoint(m.derived.after)
         if (before === undefined || after === undefined || before === 0) {
@@ -118,6 +130,26 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
             severity: 'error',
             rule: 'derived-mismatch',
             message: `metric "${key}" is ${m.value}, but ${m.derived.before} → ${m.derived.after} computes to ${computed.toFixed(4)}`,
+            detail: 'A derived value must be correctly rounded to its own precision.',
+          })
+        }
+      } else if (m.derived.op === 'ratio' || m.derived.op === 'diff') {
+        const a = endpoint(m.derived.a)
+        const b = endpoint(m.derived.b)
+        if (a === undefined || b === undefined || (m.derived.op === 'ratio' && b === 0)) {
+          leaks.push({
+            severity: 'error',
+            rule: 'bad-derived',
+            message: `metric "${key}": ${m.derived.op} operands must be numbers or scalar metric keys (got ${m.derived.a}, ${m.derived.b})`,
+          })
+          continue
+        }
+        const computed = m.derived.op === 'ratio' ? a / b : a - b
+        if (!roundsTo(m.value, computed)) {
+          leaks.push({
+            severity: 'error',
+            rule: 'derived-mismatch',
+            message: `metric "${key}" is ${m.value}, but ${m.derived.a} ${m.derived.op === 'ratio' ? '/' : '−'} ${m.derived.b} computes to ${computed.toFixed(4)}`,
             detail: 'A derived value must be correctly rounded to its own precision.',
           })
         }

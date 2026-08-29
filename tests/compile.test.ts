@@ -242,10 +242,10 @@ test('float sums are compared at the stored precision, not bit-exactly', async (
 
 test('an unknown derived op is a leak, never a verification bypass', async () => {
   const { leaks } = await compileCase('Sneaky {{m:s}}.', {
-    metrics: { s: { value: 999, unit: 'USD', derived: { op: 'avg', of: ['s'] } } },
+    metrics: { s: { value: 999, unit: 'USD', derived: { op: 'median', of: ['s'] } } },
   })
   assert.deepEqual(leaks.map((l) => l.rule), ['bad-derived'])
-  assert.match(leaks[0].message, /unknown derived op "avg"/)
+  assert.match(leaks[0].message, /unknown derived op "median"/)
 })
 
 test('a typo in a marker is a leak, not verbatim output', async () => {
@@ -312,4 +312,44 @@ test('letter-prefixed tokens are names — Q3 and v6.109.0 pass, 약30% does not
 test('a null metric object is a leak with a name, not a crash', async () => {
   const { leaks } = await compileCase('V {{m:x}}.', { metrics: { x: null } })
   assert.equal(leaks.some((l) => l.rule === 'missing-field' && l.message.includes('"x"')), true)
+})
+
+test('avg, ratio and diff are recomputed like every other derivation', async () => {
+  const part = (v: number) => ({ ...MEASURED, value: v })
+  const ok = await compileCase('{{m:mean}} {{m:rate}} {{m:delta}} of {{m:a}} {{m:b}}.', {
+    metrics: {
+      a: part(10), b: part(30),
+      mean: { value: 20, unit: 'count', derived: { op: 'avg', of: ['a', 'b'] } },
+      rate: { value: 0.33, unit: 'ratio', definition: 'a per b', derived: { op: 'ratio', a: 'a', b: 'b' } },
+      delta: { value: 20, unit: 'count', derived: { op: 'diff', a: 'b', b: 'a' } },
+    },
+  })
+  assert.equal(ok.leaks.length, 0)
+  const bad = await compileCase('{{m:mean}} of {{m:a}} {{m:b}}.', {
+    metrics: { a: part(10), b: part(30), mean: { value: 25, unit: 'count', derived: { op: 'avg', of: ['a', 'b'] } } },
+  })
+  assert.deepEqual(bad.leaks.map((l) => l.rule), ['derived-mismatch'])
+})
+
+test('an identifier shaped like a measurement is a smuggled number', async () => {
+  const { leaks } = await compileCase('Grew {{id:growth}} to {{id:revenue}} in {{id:app_version}} flag {{id:flag}} timeout {{id:timeout}}. {{m:x}}', {
+    metrics: { x: MEASURED },
+    identifiers: { growth: '47%', revenue: '1,428', app_version: '6.109.0', flag: '45', timeout: '30초' },
+  })
+  // % and thousands-separated forms are measurements; versions, bare flags, 30초 are names
+  assert.deepEqual(leaks.map((l) => l.rule), ['identifier-measurement', 'identifier-measurement'])
+})
+
+test('raw escapes are counted, disclosed in the md appendix, and boundable', async () => {
+  const report = 'Up {{raw:three-fold}} at {{raw:24/7}}. {{m:x}}'
+  const ok = await compileCase(report, { metrics: { x: MEASURED } }, 'md')
+  assert.equal(ok.grounded.raw, 2)
+  assert.match(ok.output ?? '', /### Ungrounded \(2 raw escapes\)/)
+  assert.match(ok.output ?? '', /- three-fold/)
+
+  const dir = await mkdtemp(join(tmpdir(), 'wt-'))
+  await writeFile(join(dir, 'report.md'), report)
+  await writeFile(join(dir, 'metrics.json'), JSON.stringify({ metrics: { x: MEASURED } }))
+  const gated = await compile(join(dir, 'report.md'), join(dir, 'metrics.json'), { maxRaw: 1 })
+  assert.deepEqual(gated.leaks.map((l) => l.rule), ['raw-budget'])
 })

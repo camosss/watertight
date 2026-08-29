@@ -148,35 +148,42 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
           result.errors.push({ key, message })
         }
       }
+      const endpoint = (v: number | string): number | undefined => {
+        if (typeof v === 'number') return v
+        const ref = raw.metrics[v]
+        return ref && typeof ref.value === 'number' ? ref.value : undefined
+      }
+      // every recomputed value keeps the author's stated precision — refresh must not
+      // turn 0.155 into 0.1551724 or write float noise over an exact 0.3
+      const authorDecimals = (String(m.value).split('.')[1] ?? '').length
+      const rounded = (v: number) => Number(v.toFixed(authorDecimals))
       let computed: number
-      if (m.derived.op === 'sum') {
-        computed = m.derived.of.reduce((acc, ref) => {
+      if (m.derived.op === 'sum' || m.derived.op === 'avg') {
+        const total = m.derived.of.reduce((acc, ref) => {
           const part = raw.metrics[ref]
           return acc + (part && typeof part.value === 'number' ? part.value : NaN)
         }, 0)
-        if (!Number.isFinite(computed)) {
-          fail('sum references unknown or non-scalar metrics — not recomputed')
+        if (!Number.isFinite(total)) {
+          fail(`${m.derived.op} references unknown or non-scalar metrics — not recomputed`)
           continue
         }
-        // author precision, same as pct_change — 0.1+0.2 must not write
-        // 0.30000000000000004 into the IR or report a phantom "0.3 → 0.3" change
-        const sumDecimals = (String(m.value).split('.')[1] ?? '').length
-        computed = Number(computed.toFixed(Math.max(sumDecimals, 0)))
+        computed = rounded(m.derived.op === 'avg' ? total / m.derived.of.length : total)
       } else if (m.derived.op === 'pct_change') {
-        const endpoint = (v: number | string): number | undefined => {
-          if (typeof v === 'number') return v
-          const ref = raw.metrics[v]
-          return ref && typeof ref.value === 'number' ? ref.value : undefined
-        }
         const before = endpoint(m.derived.before)
         const after = endpoint(m.derived.after)
         if (before === undefined || after === undefined || before === 0) {
           fail('pct_change endpoints are unresolvable or zero — not recomputed')
           continue
         }
-        // keep the author's stated precision — refresh must not turn 0.155 into 0.1551724
-        const decimals = (String(m.value).split('.')[1] ?? '').length
-        computed = Number(((after - before) / before).toFixed(decimals))
+        computed = rounded((after - before) / before)
+      } else if (m.derived.op === 'ratio' || m.derived.op === 'diff') {
+        const a = endpoint(m.derived.a)
+        const b = endpoint(m.derived.b)
+        if (a === undefined || b === undefined || (m.derived.op === 'ratio' && b === 0)) {
+          fail(`${m.derived.op} operands are unresolvable — not recomputed`)
+          continue
+        }
+        computed = rounded(m.derived.op === 'ratio' ? a / b : a - b)
       } else {
         fail(`unknown derived op "${(m.derived as { op: string }).op}" — not recomputed`)
         continue

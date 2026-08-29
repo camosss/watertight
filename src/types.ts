@@ -20,8 +20,13 @@ export interface Source {
 
 export type Derived =
   | { op: 'sum'; of: string[] }
+  | { op: 'avg'; of: string[] }
   /** Endpoints are metric keys (recommended — each endpoint then carries its own receipt) or inline numbers */
   | { op: 'pct_change'; before: number | string; after: number | string }
+  /** a / b — for rates the narrative states directly */
+  | { op: 'ratio'; a: number | string; b: number | string }
+  /** a − b */
+  | { op: 'diff'; a: number | string; b: number | string }
 
 export interface Metric {
   /** A single value, or [low, high] for a range */
