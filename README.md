@@ -26,6 +26,8 @@ An ungrounded number is a **leak**. A report with zero leaks **holds water**:
   ✗ [derived-mismatch] metric "revenue_total" is 1440, but its parts sum to 1428
 ```
 
+<br>
+
 ## Contents
 
 - [Why this exists](#why-this-exists)
