@@ -1,4 +1,4 @@
-name: watertight
+name: watertight-check
 description: Fail the build when a report contains ungrounded numbers — every figure must carry its receipt.
 branding:
   icon: droplet
