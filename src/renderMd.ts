@@ -1,6 +1,9 @@
 import { formatValue, receipt } from './render.js'
 import type { Ir } from './types.js'
 
+const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹'
+const sup = (n: number): string => `⁽${String(n).split('').map((d) => SUPERSCRIPT[Number(d)]).join('')}⁾`
+
 /**
  * Grounded markdown: the portable render target. Every figure is bold with a superscript
  * that points into a receipts appendix, so the output pastes into Notion, a PR body, or
@@ -13,7 +16,7 @@ export function renderMarkdown(report: string, ir: Ir): string {
   const body = report
     .replace(/\{\{m:([\w-]+)\}\}/g, (_, key) => {
       if (!used.includes(key)) used.push(key)
-      return `**${formatValue(ir.metrics[key])}** ⁽${used.indexOf(key) + 1}⁾`
+      return `**${formatValue(ir.metrics[key])}** ${sup(used.indexOf(key) + 1)}`
     })
     .replace(/\{\{id:([\w-]+)\}\}/g, (_, key) => `\`${ir.identifiers[key]}\``)
     .replace(
@@ -26,9 +29,9 @@ export function renderMarkdown(report: string, ir: Ir): string {
     .map((key, i) => {
       const m = ir.metrics[key]
       const definition = m.definition ? ` — ${m.definition}` : ''
-      return `${i + 1}. **${key}** = ${formatValue(m)}${definition}\n   ${receipt(m)}`
+      return `${i + 1}. **${key}** = ${formatValue(m)}${definition}\n   ${receipt(m, false)}`
     })
     .join('\n')
 
-  return `${body}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}\n`
+  return `${body.trimEnd()}\n\n---\n\n### Receipts (${used.length} metrics)\n\n${appendix}\n`
 }

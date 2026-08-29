@@ -147,7 +147,7 @@ test('md format renders superscripts and a receipts appendix', async () => {
   const result = await compile(join(FIXTURE, 'report.md'), join(FIXTURE, 'metrics.json'), 'md')
   assert.equal(result.leaks.length, 0)
   // first metric use gets superscript 1, and the appendix lists it with its receipt
-  assert.match(result.output ?? '', /\*\*.+\*\* ⁽1⁾/)
+  assert.match(result.output ?? '', /\*\*.+\*\* ⁽¹⁾/)
   assert.match(result.output ?? '', /### Receipts \(6 metrics\)/)
   // identifiers stay as code spans, claims keep their evidence inline
   assert.ok(result.output?.includes('`3.2.0`'))
@@ -162,7 +162,23 @@ test('md format repeats the same superscript for a reused metric', async () => {
     { metrics: { x: MEASURED, y: { ...MEASURED, value: 7 } } },
     'md',
   )
-  const supers = [...(output ?? '').matchAll(/⁽(\d)⁾/g)].map((m) => m[1])
+  const supers = [...(output ?? '').matchAll(/⁽([⁰¹²³⁴⁵⁶⁷⁸⁹]+)⁾/g)].map((m) => m[1])
   // body only — the appendix numbers with an ordered list, not superscripts
-  assert.deepEqual(supers, ['1', '1', '2'])
+  assert.deepEqual(supers, ['¹', '¹', '²'])
+})
+
+test('pct_change endpoints may be metric keys, and an unknown key is a leak', async () => {
+  const base = {
+    a: { ...MEASURED, value: 200 },
+    b: { ...MEASURED, value: 300 },
+  }
+  const good = await compileCase('Change: {{m:d}} from {{m:a}} to {{m:b}}.', {
+    metrics: { ...base, d: { value: 0.5, unit: 'ratio-point', definition: 'x', derived: { op: 'pct_change', before: 'a', after: 'b' } } },
+  })
+  assert.equal(good.leaks.length, 0)
+
+  const bad = await compileCase('Change: {{m:d}}.', {
+    metrics: { ...base, d: { value: 0.5, unit: 'ratio-point', definition: 'x', derived: { op: 'pct_change', before: 'a', after: 'nope' } } },
+  })
+  assert.deepEqual(bad.leaks.map((l) => l.rule), ['bad-derived'])
 })

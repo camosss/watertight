@@ -13,7 +13,7 @@
     },
     "cvr_lift": {
       "value": 0.161, "unit": "ratio-point", "definition": "relative lift, treatment vs control",
-      "derived": { "op": "pct_change", "before": 0.031, "after": 0.036 }
+      "derived": { "op": "pct_change", "before": "cvr_before", "after": "cvr_after" }
     },
     "revenue_delta": {
       "value": 1428, "unit": "USD",

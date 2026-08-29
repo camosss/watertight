@@ -18,7 +18,8 @@ export interface Source {
 
 export type Derived =
   | { op: 'sum'; of: string[] }
-  | { op: 'pct_change'; before: number; after: number }
+  /** Endpoints are metric keys (recommended — each endpoint then carries its own receipt) or inline numbers */
+  | { op: 'pct_change'; before: number | string; after: number | string }
 
 export interface Metric {
   /** A single value, or [low, high] for a range */

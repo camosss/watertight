@@ -80,7 +80,22 @@ export function parseIr(raw: unknown): { ir?: Ir; leaks: Leak[] } {
           })
         }
       } else if (m.derived.op === 'pct_change') {
-        const computed = (m.derived.after - m.derived.before) / m.derived.before
+        const endpoint = (v: number | string): number | undefined => {
+          if (typeof v === 'number') return v
+          const ref = metrics[v]
+          return ref && typeof ref.value === 'number' ? ref.value : undefined
+        }
+        const before = endpoint(m.derived.before)
+        const after = endpoint(m.derived.after)
+        if (before === undefined || after === undefined || before === 0) {
+          leaks.push({
+            severity: 'error',
+            rule: 'bad-derived',
+            message: `metric "${key}": pct_change endpoints must be numbers or scalar metric keys (got ${m.derived.before} → ${m.derived.after})`,
+          })
+          continue
+        }
+        const computed = (after - before) / before
         if (!roundsTo(m.value, computed)) {
           leaks.push({
             severity: 'error',

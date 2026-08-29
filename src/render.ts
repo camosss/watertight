@@ -14,13 +14,13 @@ export function formatValue(m: Metric): string {
   return `${m.value.toLocaleString()} ${m.unit}`.trim()
 }
 
-export function receipt(m: Metric): string {
+export function receipt(m: Metric, includeDefinition = true): string {
   const source = m.derived
     ? m.derived.op === 'sum'
       ? `= ${m.derived.of.join(' + ')} (recomputed)`
       : `= ${m.derived.before} → ${m.derived.after} (recomputed)`
     : [m.source?.type, ...Object.entries(m.source ?? {}).filter(([k]) => k !== 'type').map(([, v]) => String(v))].filter(Boolean).join(' · ')
-  return [source, m.window, m.fetched_at && `fetched ${m.fetched_at}`, m.definition].filter(Boolean).join(' · ')
+  return [source, m.window, m.fetched_at && `fetched ${m.fetched_at}`, includeDefinition && m.definition].filter(Boolean).join(' · ')
 }
 
 /** Minimal markdown: headings, paragraphs, bold, unordered lists. The narrative layer is deliberately thin. */

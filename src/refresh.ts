@@ -142,9 +142,14 @@ export async function refresh(irPath: string, options: RefreshOptions): Promise<
         return acc + (part && typeof part.value === 'number' ? part.value : NaN)
       }, 0)
     } else {
-      const before = raw.metrics[m.derived.before]?.value
-      const after = raw.metrics[m.derived.after]?.value
-      if (typeof before !== 'number' || typeof after !== 'number' || before === 0) continue
+      const endpoint = (v: number | string): number | undefined => {
+        if (typeof v === 'number') return v
+        const ref = raw.metrics[v]
+        return ref && typeof ref.value === 'number' ? ref.value : undefined
+      }
+      const before = endpoint(m.derived.before)
+      const after = endpoint(m.derived.after)
+      if (before === undefined || after === undefined || before === 0) continue
       // keep the author's stated precision — refresh must not turn 0.155 into 0.1551724
       const decimals = (String(m.value).split('.')[1] ?? '').length
       computed = Number(((after - before) / before).toFixed(decimals))
