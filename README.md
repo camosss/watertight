@@ -26,11 +26,21 @@ An ungrounded number is a **leak**. A report with zero leaks **holds water**:
   ✗ [derived-mismatch] metric "revenue_total" is 1440, but its parts sum to 1428
 ```
 
-**Contents** — [Why](#why-this-exists) · [Quick start](#quick-start) ·
-[Output](#what-the-output-looks-like) · [Checks](#what-it-checks) ·
-[Re-verification](#re-verification) · [Custom fetchers](#custom-fetchers) ·
-[CI](#in-ci) · [For AI](#for-ai-authored-reports) ·
-[Non-goals](#what-it-deliberately-does-not-do)
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Quick start](#quick-start)
+  - [The IR — metrics.json](#the-ir--metricsjson)
+  - [The narrative — report.md](#the-narrative--reportmd)
+- [What the output looks like](#what-the-output-looks-like)
+- [What it checks](#what-it-checks)
+- [Re-verification](#re-verification)
+- [Custom fetchers](#custom-fetchers)
+- [In CI](#in-ci)
+- [For AI-authored reports](#for-ai-authored-reports)
+- [What it deliberately does not do](#what-it-deliberately-does-not-do)
+- [Related work](#related-work)
+- [License](#license)
 
 <br>
 
