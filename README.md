@@ -13,18 +13,24 @@ npx watertight report.md metrics.json
 ```
 
 ```
-watertight v0.2.0 · 20 grounded metrics · 4 claims · 5 identifiers
+watertight v0.8.0 · 20 grounded metrics · 4 claims · 5 identifiers
 holds water → report.html
 ```
 
 An ungrounded number is a **leak**. A report with zero leaks **holds water**:
 
 ```
-2 leak(s) — the report does not hold water:
+2 error(s) — the report does not hold water:
 
   ✗ [naked-number] report.md:31 — "15%" appears in the narrative without a receipt
   ✗ [derived-mismatch] metric "revenue_total" is 1440, but its parts sum to 1428
 ```
+
+**Contents** — [Why](#why-this-exists) · [Quick start](#quick-start) ·
+[Output](#what-the-output-looks-like) · [Checks](#what-it-checks) ·
+[Re-verification](#re-verification) · [Custom fetchers](#custom-fetchers) ·
+[CI](#in-ci) · [For AI](#for-ai-authored-reports) ·
+[Non-goals](#what-it-deliberately-does-not-do)
 
 <br>
 
@@ -60,8 +66,12 @@ npm install -g watertight
 npx watertight report.md metrics.json
 ```
 
-You write two files. **`metrics.json`** holds every value with its receipt —
-a measured metric says where it was fetched, over what window, and when:
+You write two files.
+
+### The IR — `metrics.json`
+
+Every value with its receipt. A measured metric says where it was fetched,
+over what window, and when:
 
 ```json
 {
@@ -124,7 +134,9 @@ A **range** states a hypothesis honestly — plans are receipts too:
 }
 ```
 
-**`report.md`** is the narrative. No literal figures, only references:
+### The narrative — `report.md`
+
+No literal figures, only references:
 
 ```markdown
 Rolled out in `{{id:app_version}}` behind `{{id:flag}}`.
@@ -150,6 +162,8 @@ watertight . --format md             # → grounded markdown (below)
 watertight . --check                 # verify only, write nothing (CI)
 watertight . --check --max-age 30    # also fail receipts older than 30 days
 watertight . --strict                # promote warnings (worded-number) to errors
+watertight . --max-raw 2             # bound the {{raw:}} escape hatch
+watertight verify .                  # re-fetch sources and compare — writes nothing
 watertight . --json                  # machine-readable result
 ```
 
@@ -185,7 +199,7 @@ figure shows its receipt.
 
 | check | catches |
 |---|---|
-| `naked-number` | any digit in prose not covered by a reference — heading text included; dates, URLs, code spans and `{{raw:}}` are exempt |
+| `naked-number` | any digit in prose not covered by a reference — heading text included; dates, URLs, code spans, letter-prefixed name tokens (`Q3`, `v6.109.0`, `iOS15`) and `{{raw:}}` are exempt |
 | `unknown-ref` | `{{m:...}}` / `{{id:...}}` pointing at nothing |
 | `missing-field` | a measured metric without `source`, `window`, or `fetched_at` |
 | `definition-required` | a `ratio` / `ratio-point` metric with no stated basis — this is how a fill rate of 107% stays honest |
@@ -201,6 +215,7 @@ figure shows its receipt.
 | `assertion-failed` | an `assertions` comparison that is false — the numbers no longer support the conclusion |
 | `bad-assertion` / `duplicate-key` | a malformed assertion (unknown op, missing operand, range without `.lo`/`.hi`), or a key that is both metric and assertion |
 | `unused-metric` | *(info)* a metric nothing references — drift signal, never fails, never promoted |
+| `receipt-mismatch` | *(verify)* a stored value its source no longer returns — the receipt is real, the value is not |
 
 Severities: **error** fails the build and suppresses output; **warn** and **info**
 are reported while the output still renders and the exit code stays 0.
