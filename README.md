@@ -150,10 +150,31 @@ can reach, rewrites `value` and `fetched_at`, and recomputes derived values:
 - `command` sources — run **only** with the explicit `--allow-commands` flag,
   because refreshing an IR you didn't author must never execute its shell
   commands
+- any other source type can be covered by a **custom fetcher** — a JS module
+  you point at explicitly:
+
+  ```bash
+  watertight refresh . --fetchers ./my-fetchers.mjs
+  ```
+
+  ```js
+  // my-fetchers.mjs — export one function per source type
+  export async function mixpanel(source) {
+    // credentials from the environment, receipt fields from the IR
+    return valueFetchedFrom(source.project, source.bookmark)
+  }
+  ```
+
+  [`examples/fetchers/mixpanel.mjs`](./examples/fetchers/mixpanel.mjs) is a
+  working example. Loading a module runs its code, so only pass files you
+  wrote or trust — the IR itself can never name a fetcher. Built-in csv/json/
+  command adapters always win over a custom one of the same name.
 - everything else (dashboards, vendor reports, hypotheses) is **named as
   skipped** — never silently assumed fresh
 
-`--dry-run` previews changes without writing.
+Derived values follow their inputs: sums are recomputed exactly, percentage
+changes at the precision the author stated. `--dry-run` previews changes
+without writing.
 
 ## For AI-authored reports
 

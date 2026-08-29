@@ -89,6 +89,9 @@ inputs: recompute at the source and correct whichever side is wrong.
 sources, updates `fetched_at`, recomputes derived values, and names every
 metric it could *not* refresh. `command` sources run only under
 `--allow-commands`; never pass that flag on an IR you did not author.
+Other source types (vendor APIs, analytics tools) can be refreshed through
+`--fetchers <module.mjs>` — one exported function per source type, with
+credentials from the environment, never from the IR.
 
 ## What stays yours
 
