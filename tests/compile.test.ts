@@ -302,7 +302,7 @@ test('evidence-only metrics appear in the receipts appendix', async () => {
   assert.match(output ?? '', /\*\*hidden\*\* = 7/)
 })
 
-test('letter-prefixed tokens are names — Q3 and v6.109.0 pass, 약30% does not', async () => {
+test('letter-prefixed tokens are names — Q3 and v6.109.0 pass, a prefixed percentage does not', async () => {
   const ok = await compileCase('# Q3 rollout in v6.109.0 on iOS15\n\nBody {{m:x}}.', { metrics: { x: MEASURED } })
   assert.equal(ok.leaks.length, 0)
   const korean = await compileCase('약30% 상승. {{m:x}}', { metrics: { x: MEASURED } })
@@ -336,7 +336,7 @@ test('an identifier shaped like a measurement is a smuggled number', async () =>
     metrics: { x: MEASURED },
     identifiers: { growth: '47%', revenue: '1,428', app_version: '6.109.0', flag: '45', timeout: '30초' },
   })
-  // % and thousands-separated forms are measurements; versions, bare flags, 30초 are names
+  // % and thousands-separated forms are measurements; versions, bare flags and durations are names
   assert.deepEqual(leaks.map((l) => l.rule), ['identifier-measurement', 'identifier-measurement'])
 })
 
@@ -373,7 +373,7 @@ test('fenced syntax examples count toward nothing — header, scanner and render
   assert.equal(grounded.claims, 0)
 })
 
-test('Korean counter units are measurements in an identifier; 초 stays a name', async () => {
+test('Korean counter units are measurements in an identifier; a duration stays a name', async () => {
   const { leaks } = await compileCase('{{id:rev}} {{id:cnt}} {{id:timeout}} {{m:x}}', {
     metrics: { x: MEASURED },
     identifiers: { rev: '1428원', cnt: '72건', timeout: '30초' },
@@ -399,7 +399,7 @@ test('a warning reports without blocking; --strict promotes it; info never promo
   assert.equal(strict.output, undefined)
 })
 
-test('worded quantities warn; compound words never do', async () => {
+test('worded quantities warn; compound words that merely contain a counter never do', async () => {
   const hit = await compileCase('세 배 가까이 늘어 절반 이상이 됐고, 수십만 건과 a million 규모다. {{m:x}}', { metrics: { x: MEASURED } })
   assert.equal(hit.leaks.filter((l) => l.rule === 'worded-number').length, 4)
 
@@ -411,11 +411,11 @@ test('assertions judge the arithmetic half of a conclusion', async () => {
   const irFor = (total: number) => ({
     metrics: {
       total: { ...MEASURED, value: total },
-      target: { value: [30000, 140000], unit: '원', source: { type: 'hypothesis' }, window: 'plan', fetched_at: '-' },
+      target: { value: [30000, 140000], unit: 'KRW', source: { type: 'hypothesis' }, window: 'plan', fetched_at: '-' },
     },
     assertions: { under_target: { op: 'lt', a: 'total', b: 'target.lo' } },
   })
-  const report = 'Total {{m:total}} vs {{m:target}}. {{claim: 미달 | evidence: under_target}}'
+  const report = 'Total {{m:total}} vs {{m:target}}. {{claim: under target | evidence: under_target}}'
 
   const ok = await compileCase(report, irFor(1428))
   assert.equal(ok.leaks.filter((l) => l.severity === 'error').length, 0)
@@ -489,7 +489,7 @@ test('a non-string, non-number assertion operand is a leak, cited or not', async
   }
 })
 
-test('한 번 and double-check are rhetoric; 두 번 and doubled still warn', async () => {
+test('one-time and double-check read as rhetoric; two-times and doubled still warn', async () => {
   const miss = await compileCase('한 번 더 확인했고 double-check 했다. {{m:x}}', { metrics: { x: MEASURED } })
   assert.equal(miss.leaks.filter((l) => l.rule === 'worded-number').length, 0)
   const hit = await compileCase('두 번 실패했고 revenue doubled. {{m:x}}', { metrics: { x: MEASURED } })
@@ -502,7 +502,7 @@ test('the markdown appendix shows what each assertion judged', async () => {
     {
       metrics: {
         total: { ...MEASURED, value: 1428 },
-        target: { value: [30000, 140000], unit: '원', source: { type: 'hypothesis' }, window: 'w', fetched_at: '-' },
+        target: { value: [30000, 140000], unit: 'KRW', source: { type: 'hypothesis' }, window: 'w', fetched_at: '-' },
       },
       assertions: { under_target: { op: 'lt', a: 'total', b: 'target.lo' } },
     },

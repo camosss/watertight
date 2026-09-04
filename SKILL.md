@@ -97,7 +97,7 @@ watertight . --check --max-age 30           # also fail receipts older than 30 d
 ```
 
 Every leak names its line (`report.md:31`), so fix them where they live.
-A `worded-number` warning ("세 배", "half of") means a quantity is written in
+A `worded-number` warning ("doubled", "half of") means a quantity is written in
 words: if it has a basis, restate it as a metric or derived; if it is
 rhetoric, mark it `{{raw:…}}`. Run with `--strict` to treat these as errors.
 Fix leaks by *going and getting the receipt* — running the query, opening

@@ -223,7 +223,7 @@ figure shows its receipt.
 | `stale-metric` | with `--max-age <days>`: a receipt whose `fetched_at` is older than the budget — numbers age |
 | `identifier-measurement` | an identifier whose value is shaped like a measurement (`"47%"`, `"1,428"`) — a number smuggled past the receipt requirement through the id door |
 | `raw-budget` | with `--max-raw <n>`: more `{{raw:}}` escapes than the budget — the escape hatch stays boundable |
-| `worded-number` | *(warn)* a quantity written in words — "세 배", "절반", "a million" — that no receipt can bind to; `--strict` makes it fail |
+| `worded-number` | *(warn)* a quantity written in words — "doubled", "half of", "a million", plus a small Korean dictionary — that no receipt can bind to; `--strict` makes it fail |
 | `assertion-failed` | an `assertions` comparison that is false — the numbers no longer support the conclusion |
 | `bad-assertion` / `duplicate-key` | a malformed assertion (unknown op, missing operand, range without `.lo`/`.hi`), or a key that is both metric and assertion |
 | `unused-metric` | *(info)* a metric nothing references — drift signal, never fails, never promoted |
@@ -247,8 +247,8 @@ the natural CI companion to `--check`.
 metric is cited as claim evidence, it says so:
 
 ```
-  fallback_revenue_total: 1,428 → 45,200
-  ⚠ claim "수익 가설 미달" cites fallback_revenue_total — the number moved, review the conclusion
+  revenue_total: 1,428 → 45,200
+  ⚠ claim "revenue fell short of target" cites revenue_total — the number moved, review the conclusion
 ```
 
 Conclusions age like numbers do. Sources:
